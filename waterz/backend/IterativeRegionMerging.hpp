@@ -163,6 +163,32 @@ public:
 		return edges;
 	}
 
+	template <typename EdgeMetadata, typename EdgeScoringFunction, typename StatisticsProviderType>
+	std::vector<EdgeMetadata> extractRegionGraphMeta(EdgeScoringFunction& edgeScoringFunction, StatisticsProviderType& statisticsProvider) {
+
+		std::vector<EdgeMetadata> ret;
+
+		for (EdgeIdType e = 0; e < _regionGraph.numEdges(); e++) {
+
+			if (_deleted[e])
+				continue;
+
+			ScoreType score;
+			if (_stale[e])
+				score = scoreEdge(e, edgeScoringFunction);
+			else
+				score = _edgeScores[e];
+
+			if (score < _mergedUntil)
+				continue;
+
+			// ret.push_back(EdgeMetadata(statisticsProvider.getEdgeMetadata(e)) );
+			ret.emplace_back(statisticsProvider.getEdgeMetadata(e));
+		}
+
+		return ret;
+	}
+
 private:
 
 	/**

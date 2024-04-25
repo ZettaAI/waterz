@@ -1,17 +1,18 @@
 from __future__ import absolute_import
-from .evaluate import evaluate
+# from .evaluate import evaluate
 
 __version__ = '0.8'
 
 def agglomerate(
-        affs,
-        thresholds,
+        affs = None,
+        thresholds = None,
         gt = None,
         fragments = None,
         aff_threshold_low  = 0.0001,
         aff_threshold_high = 0.9999,
         return_merge_history = False,
         return_region_graph = False,
+        return_region_graph_metadata = False,
         scoring_function = 'OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>',
         discretize_queue = 0,
         force_rebuild = False):
@@ -259,4 +260,6 @@ def agglomerate(
         aff_threshold_low,
         aff_threshold_high,
         return_merge_history,
-        return_region_graph)
+        return_region_graph,
+        return_region_graph_metadata,
+        )

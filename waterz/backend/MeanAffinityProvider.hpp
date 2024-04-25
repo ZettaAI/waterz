@@ -46,6 +46,10 @@ public:
 		return _meanAffinities[e];
 	}
 
+	inline double getEdgeMetadata(EdgeIdType e) const {
+		return _numValues[e];
+	}
+
 private:
 
 	typename RegionGraphType::template EdgeMap<size_t> _numValues;

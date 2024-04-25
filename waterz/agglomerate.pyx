@@ -5,18 +5,20 @@ import numpy as np
 cimport numpy as np
 
 def agglomerate(
-        affs,
-        thresholds,
+        affs=None,
+        thresholds=None,
         gt=None,
         fragments=None,
         aff_threshold_low=0.0001,
         aff_threshold_high=0.9999,
         return_merge_history=False,
-        return_region_graph=False):
+        return_region_graph=False,
+        return_region_graph_metadata=False,
+        ):
 
     # the C++ part assumes contiguous memory, make sure we have it (and do 
     # nothing, if we do)
-    if not affs.flags['C_CONTIGUOUS']:
+    if affs is not None and not affs.flags['C_CONTIGUOUS']:
         print("Creating memory-contiguous affinity arrray (avoid this by passing C_CONTIGUOUS arrays)")
         affs = np.ascontiguousarray(affs)
     if gt is not None and not gt.flags['C_CONTIGUOUS']:
@@ -62,6 +64,10 @@ def agglomerate(
         if return_region_graph:
 
             result += (getRegionGraph(state),)
+
+        if return_region_graph_metadata:
+
+            result += (getRegionGraphMeta(state),)
 
         if len(result) == 1:
             yield result[0]
@@ -135,5 +141,7 @@ cdef extern from "frontend_agglomerate.h":
             float        threshold)
 
     vector[ScoredEdge] getRegionGraph(WaterzState& state)
+
+    vector[double] getRegionGraphMeta(WaterzState& state)
 
     void free(WaterzState& state)
