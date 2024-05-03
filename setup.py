@@ -33,15 +33,15 @@ include_dirs = [
     # os.path.dirname(get_python_inc()),
     # numpy.get_include(),
 ]
-extensions = [
-    Extension(
-        'waterz.evaluate',
-        sources=['waterz/evaluate.cpp', 'waterz/frontend_evaluate.cpp'],
-        include_dirs=include_dirs,
-        language='c++',
-        extra_link_args=['-std=c++11'],
-        extra_compile_args=['-std=c++11', '-w'])
-]
+# extensions = [
+#     Extension(
+#         'waterz.evaluate',
+#         sources=['waterz/evaluate.cpp', 'waterz/frontend_evaluate.cpp'],
+#         include_dirs=include_dirs,
+#         language='c++',
+#         extra_link_args=['-std=c++11'],
+#         extra_compile_args=['-std=c++11', '-w'])
+# ]
 
 
 setup(
@@ -64,7 +64,7 @@ setup(
         'backend': ['*.hpp']
     },
     zip_safe=False,
-    ext_modules=extensions,
+    # ext_modules=extensions,
     classifiers=[
         "Programming Language :: Python :: 3",
         "Intended Audience :: Developers",
