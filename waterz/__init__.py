@@ -8,6 +8,8 @@ def agglomerate(
         thresholds = None,
         gt = None,
         fragments = None,
+        input_rag = None,
+        input_rag_metadata = None,
         aff_threshold_low  = 0.0001,
         aff_threshold_high = 0.9999,
         return_merge_history = False,
@@ -252,14 +254,25 @@ def agglomerate(
             build_extension.build_lib  = lib_dir
             build_extension.run()
 
-    return __import__(module_name).agglomerate(
-        affs,
-        thresholds,
-        gt,
-        fragments,
-        aff_threshold_low,
-        aff_threshold_high,
-        return_merge_history,
-        return_region_graph,
-        return_region_graph_metadata,
-        )
+    if input_rag is not None or input_rag_metadata is not None:
+        # agglomerate input rag instead
+        return __import__(module_name).agglomerate_rag(
+            input_rag,
+            input_rag_metadata,
+            thresholds,
+            fragments,
+            )
+
+    else:
+        # agglomerate with affinities
+        return __import__(module_name).agglomerate(
+            affs,
+            thresholds,
+            gt,
+            fragments,
+            aff_threshold_low,
+            aff_threshold_high,
+            return_merge_history,
+            return_region_graph,
+            return_region_graph_metadata,
+            )

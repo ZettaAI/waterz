@@ -82,3 +82,24 @@ get_region_graph(
 
 	std::cout << "Region graph number of edges: " << rg.edges().size() << std::endl;
 }
+
+template<typename ID, typename StatisticsProviderType>
+inline
+void
+initialize_with_region_graph(
+		StatisticsProviderType& statisticsProvider,
+		RegionGraph<ID>& rg,
+		const std::vector<ScoredEdge>& edges,
+		const std::vector<double>& edges_metadata) {
+
+	typedef RegionGraph<ID> RegionGraphType;
+	typedef typename RegionGraphType::EdgeIdType EdgeIdType;
+
+	for (int i = 0; i < edges.size(); ++i) {
+		const auto& edge = edges[i];
+		double size = edges_metadata[i];
+		auto aff = 1.0 - edge.score;
+		EdgeIdType e = rg.addEdge(edge.u, edge.v);
+		statisticsProvider.addEdge(e, aff, size);
+	}
+}
