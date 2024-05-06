@@ -187,6 +187,9 @@ def agglomerate(
                 raise ImportError
             else:
                 __import__(module_name)
+                if 'agglomerate' not in dir(__import__(module_name)):
+                    # compilation failed previously for some reason
+                    raise ImportError
 
             print("Re-using already compiled waterz version")
 
