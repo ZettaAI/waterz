@@ -56,7 +56,7 @@ setup(
     license='MIT',
     cmdclass={'build_ext': build_ext},
     setup_requires=['numpy'],
-    install_requires=['numpy', 'cython'],
+    install_requires=['numpy', 'cython', 'typeguard'],
     tests_require=['pytest'],
     packages=find_packages(),
     package_data={

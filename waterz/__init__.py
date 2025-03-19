@@ -1,23 +1,43 @@
 from __future__ import absolute_import
+from __future__ import annotations
+
+from typing import Optional
+
+from typeguard import typechecked
 # from .evaluate import evaluate
+import numpy as np
 
 __version__ = '0.8'
 
+@typechecked
 def agglomerate(
-        affs = None,
+        affs: Optional[np.array] = None,
         thresholds = None,
         gt = None,
         fragments = None,
+        semantic = None,
+        segconstraint = None,
+
         input_rag = None,
         input_rag_metadata = None,
-        aff_threshold_low  = 0.0001,
-        aff_threshold_high = 0.9999,
-        return_merge_history = False,
-        return_region_graph = False,
-        return_region_graph_metadata = False,
+        aff_threshold_low: float = 0.0001,
+        aff_threshold_high: float = 0.9999,
+        return_merge_history: bool = False,
+        return_region_graph: bool = False,
+        return_region_graph_metadata: bool = False,
         scoring_function = 'OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>',
+
+        semantic_aff_threshold: float = 0.5,
+        semantic_size_threshold: int = 100_000,
+        semantic_signal_ratio: float = 0.6,
+
+        size_heuristic_aff_threshold: float = 1.0,  # disabled
+        size_heuristic_small_threshold: int = 1_000_000,
+        size_heuristic_large_threshold: int = 10_000_000,
+
         discretize_queue = 0,
-        force_rebuild = False):
+        force_rebuild = False,
+    ):
     '''
     Compute segmentations from an affinity graph for several thresholds.
 
@@ -260,22 +280,34 @@ def agglomerate(
     if input_rag is not None or input_rag_metadata is not None:
         # agglomerate input rag instead
         return __import__(module_name).agglomerate_rag(
-            input_rag,
-            input_rag_metadata,
-            thresholds,
-            fragments,
+            rag=input_rag,
+            rag_metadata=input_rag_metadata,
+            thresholds=thresholds,
+            fragments=fragments,
             )
 
     else:
         # agglomerate with affinities
         return __import__(module_name).agglomerate(
-            affs,
-            thresholds,
-            gt,
-            fragments,
-            aff_threshold_low,
-            aff_threshold_high,
-            return_merge_history,
-            return_region_graph,
-            return_region_graph_metadata,
+            affs=affs,
+            thresholds=thresholds,
+            gt=gt,
+            fragments=fragments,
+            semantic=semantic,
+            segconstraint=segconstraint,
+
+            aff_threshold_low=aff_threshold_low,
+            aff_threshold_high=aff_threshold_high,
+
+            semantic_aff_threshold=semantic_aff_threshold,
+            semantic_size_threshold=semantic_size_threshold,
+            semantic_signal_ratio=semantic_signal_ratio,
+
+            size_heuristic_aff_threshold=size_heuristic_aff_threshold,
+            size_heuristic_small_threshold=size_heuristic_small_threshold,
+            size_heuristic_large_threshold=size_heuristic_large_threshold,
+
+            return_merge_history=return_merge_history,
+            return_region_graph=return_region_graph,
+            return_region_graph_metadata=return_region_graph_metadata,
             )
