@@ -63,12 +63,18 @@ initialize_with_rag(
 			new RegionMergingType(*regionGraph)
 	);
 
+	
+	std::shared_ptr<vector<ConstraintProvider*>> dummy_constraints(
+		new vector<ConstraintProvider*>()
+	);
+
 	WaterzContext* context = WaterzContext::createNew();
 	context->regionGraph        = regionGraph;
 	context->regionMerging      = regionMerging;
 	context->scoringFunction    = scoringFunction;
 	context->statisticsProvider = statisticsProvider;
 	// context->segmentation       = segmentation_data;
+	context->constraints 		= dummy_constraints;
 
 	if (segmentation_data != NULL) {
 		// wrap data (no copy)
