@@ -15,4 +15,3 @@ inline To undiscretize(From value, LevelsType levels) {
 
 #endif // WATERZ_DISCRETIZE_H__
 
-

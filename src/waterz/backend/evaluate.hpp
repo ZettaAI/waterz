@@ -114,4 +114,3 @@ compare_volumes(
 
 #endif // WATERZ_EVALUATE_H__
 
-

@@ -53,4 +53,3 @@ template <typename ... T>
 struct MergeProviders<CompoundProvider<T...>, EndOfCompound> {
 	typedef CompoundProvider<T...> Value;
 };
-

@@ -26,18 +26,12 @@ def evaluate(
     segmentation_data = &segmentation[0, 0, 0]
     gt_data = &gt[0, 0, 0]
 
-    cdef Metrics scores = compare_arrays(
+    scores = compare_arrays(
         shape[0], shape[1], shape[2],
         gt_data,
         segmentation_data)
 
-    # Return a simple dict matching the tests' expectations
-    return {
-        'voi_split': scores.voi_split,
-        'voi_merge': scores.voi_merge,
-        'rand_split': scores.rand_split,
-        'rand_merge': scores.rand_merge,
-    }
+    return scores
 
 cdef extern from "frontend_evaluate.h":
 

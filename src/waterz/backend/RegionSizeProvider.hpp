@@ -33,4 +33,3 @@ private:
 
 	typename RegionGraphType::template NodeMap<ValueType> _regionSizes;
 };
-

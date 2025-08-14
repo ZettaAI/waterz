@@ -82,4 +82,3 @@ get_region_graph(
 
 	std::cout << "Region graph number of edges: " << rg.edges().size() << std::endl;
 }
-

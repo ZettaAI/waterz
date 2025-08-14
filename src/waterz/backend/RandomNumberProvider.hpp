@@ -25,4 +25,3 @@ public:
 
 #endif // WATERZ_BACKEND_RANDOM_NUMBER_PROVIDER_H__
 
-

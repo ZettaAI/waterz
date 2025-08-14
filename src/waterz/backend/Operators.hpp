@@ -129,4 +129,3 @@ using Step = BinaryOperator<T1, T2, step>;
 
 #endif // WATERZ_OPERATORS_H__
 
-

@@ -52,4 +52,3 @@ private:
 	typename RegionGraphType::template EdgeMap<ValueType> _meanAffinities;
 };
 
-

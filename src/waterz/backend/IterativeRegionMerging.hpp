@@ -332,4 +332,3 @@ private:
 
 #endif // ITERATIVE_REGION_MERGING_H__
 
-

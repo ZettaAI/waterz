@@ -355,4 +355,3 @@ private:
 
 #endif // REGION_GRAPH_H__
 
-

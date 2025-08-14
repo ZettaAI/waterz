@@ -51,4 +51,3 @@ private:
 
 #endif // WATERZ_PRIORITY_QUEUE_H__
 
-

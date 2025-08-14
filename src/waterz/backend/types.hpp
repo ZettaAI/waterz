@@ -75,4 +75,3 @@ using counts_t = std::vector<T>;
 
 template < typename T >
 using counts_ptr = std::shared_ptr<counts_t<T>>;
-

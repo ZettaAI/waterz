@@ -77,4 +77,3 @@ private:
 
 #endif // WATERZ_BIN_QUEUE_H__
 
-

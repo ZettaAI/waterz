@@ -68,4 +68,3 @@ private:
 
 #endif // WATERZ_HISTOGRAM_QUANTILE_PROVIDER_H__
 
-

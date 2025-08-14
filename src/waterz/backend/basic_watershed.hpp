@@ -207,4 +207,3 @@ watershed(
         seg_raw[idx] &= traits::mask;
     }
 }
-

@@ -79,4 +79,3 @@ private:
 
 #endif // WATERZ_MAX_K_VALUES_H__
 
-

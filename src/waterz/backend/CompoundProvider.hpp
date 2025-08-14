@@ -77,4 +77,3 @@ public:
 
 #endif // WATERZ_COMPOUND_PROVIDER_H__
 
-

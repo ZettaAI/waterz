@@ -41,4 +41,3 @@ public:
 
 #endif // WATERZ_STATISTICS_PROVIDER_H__
 
-
