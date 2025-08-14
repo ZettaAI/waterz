@@ -1,14 +1,21 @@
+from __future__ import annotations
+
 import fcntl
 import glob
+import hashlib
 import os
 import shutil
 import sys
-from collections.abc import Sequence
+from typing import TYPE_CHECKING
 
 import Cython
 import numpy
 import numpy as np
-from numpy.typing import NDArray
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    from numpy.typing import NDArray
 
 
 def agglomerate(
@@ -141,11 +148,6 @@ def agglomerate(
             # ...
     """
 
-    try:
-        import hashlib
-    except ImportError:
-        import md5 as hashlib
-
     from distutils.command.build_ext import build_ext
     from distutils.core import Distribution, Extension
     from distutils.sysconfig import get_config_vars, get_python_inc
@@ -164,7 +166,8 @@ def agglomerate(
     source_files += glob.glob(source_dir + "/backend/*.hpp")
     source_files.sort()
     source_files_hashes = [
-        hashlib.md5(open(f).read().encode("utf-8")).hexdigest() for f in source_files
+        hashlib.md5(open(f).read().encode("utf-8")).hexdigest()  # noqa: S324
+        for f in source_files
     ]
 
     key = (
@@ -173,9 +176,9 @@ def agglomerate(
         source_files_hashes,
         sys.version_info,
         sys.executable,
-        Cython.__version__,
+        getattr(Cython, "__version__", "unknown"),
     )
-    module_name = "waterz_" + hashlib.md5(str(key).encode("utf-8")).hexdigest()
+    module_name = "waterz_" + hashlib.md5(str(key).encode("utf-8")).hexdigest()  # noqa: S324
     lib_dir = os.path.expanduser("~/.cython/inline")
 
     os.makedirs(lib_dir, exist_ok=True)
