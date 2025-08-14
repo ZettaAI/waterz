@@ -36,6 +36,8 @@ dev = [
 	"ruff",
 	"numpy",
 	"ipython>=8.18.1",
+	"Cython>=0.29",
+	"setuptools",
 ]
 
 [tool.uv.sources]
