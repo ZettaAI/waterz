@@ -1,21 +1,41 @@
-from __future__ import absolute_import
-from .evaluate import evaluate
+from __future__ import annotations
 
-__version__ = '0.8'
+from typing import TYPE_CHECKING, TypedDict
+
+__version__ = "0.8"
+__all__ = ["agglomerate", "evaluate"]
+
+if TYPE_CHECKING:
+    from collections.abc import Sequence
+
+    import numpy as np
+    from numpy.typing import NDArray
+
+    class Metrics(TypedDict):
+        voi_split: float
+        voi_merge: float
+        rand_split: float
+        rand_merge: float
+
+    def evaluate(segmentation: NDArray[np.uint64], gt: NDArray[np.uint64]) -> Metrics: ...
+else:
+    from .evaluate import evaluate
+
 
 def agglomerate(
-        affs,
-        thresholds,
-        gt = None,
-        fragments = None,
-        aff_threshold_low  = 0.0001,
-        aff_threshold_high = 0.9999,
-        return_merge_history = False,
-        return_region_graph = False,
-        scoring_function = 'OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>',
-        discretize_queue = 0,
-        force_rebuild = False):
-    '''
+    affs: NDArray[np.float32],
+    thresholds: Sequence[float],
+    gt: NDArray[np.uint32] | None = None,
+    fragments: NDArray[np.uint64] | None = None,
+    aff_threshold_low: float = 0.0001,
+    aff_threshold_high: float = 0.9999,
+    return_merge_history: bool = False,
+    return_region_graph: bool = False,
+    scoring_function: str = "OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>",
+    discretize_queue: int = 0,
+    force_rebuild: bool = False,
+):
+    """
     Compute segmentations from an affinity graph for several thresholds.
 
     Passed volumes need to be converted into contiguous memory arrays. This will
@@ -41,7 +61,7 @@ def agglomerate(
 
         fragments: numpy array, uint64, 3 dimensional (optional)
 
-            An optional volume of fragments to use, instead of the build-in 
+            An optional volume of fragments to use, instead of the build-in
             zwatershed.
 
         aff_threshold_low: float, default 0.0001
@@ -73,10 +93,10 @@ def agglomerate(
 
         discretize_queue: int
 
-            If set to non-zero, a bin queue with that many bins will be used to 
+            If set to non-zero, a bin queue with that many bins will be used to
             approximate the priority queue for merge operations.
 
-        force_rebuild:
+        force_rebuild: bool
 
             Force the rebuild of the module. Only needed for development.
 
@@ -122,62 +142,69 @@ def agglomerate(
             # ...
 
         # segmentation with merge history
-        for segmentation, merge_history in agglomerate(affs, range(100,10000,100), return_merge_history = True):
+        for segmentation, merge_history in agglomerate(
+            affs, range(100,10000,100), return_merge_history = True):
             # ...
 
         # segmentation with merge history and metrics compared to gt
-        for segmentation, metrics, merge_history in agglomerate(affs, range(100,10000,100), gt, return_merge_history = True):
+        for segmentation, metrics, merge_history in agglomerate(
+            affs, range(100,10000,100), gt, return_merge_history = True):
             # ...
-    '''
+    """
 
-    import sys, os
-    import shutil
-    import glob
-    import numpy
     import fcntl
+    import glob
+    import os
+    import shutil
+    import sys
+
+    import numpy
 
     try:
         import hashlib
     except ImportError:
         import md5 as hashlib
 
-    from distutils.core import Distribution, Extension
     from distutils.command.build_ext import build_ext
+    from distutils.core import Distribution, Extension
     from distutils.sysconfig import get_config_vars, get_python_inc
 
     import Cython
-    from Cython.Compiler.Main import Context, default_options
     from Cython.Build.Dependencies import cythonize
+    from Cython.Compiler.Main import Context, default_options
 
     # compile agglomerate.pyx for given scoring function
 
     source_dir = os.path.dirname(os.path.abspath(__file__))
     source_files = [
-            os.path.join(source_dir, 'agglomerate.pyx'),
-            os.path.join(source_dir, 'frontend_agglomerate.h'),
-            os.path.join(source_dir, 'frontend_agglomerate.cpp')
+        os.path.join(source_dir, "agglomerate.pyx"),
+        os.path.join(source_dir, "frontend_agglomerate.h"),
+        os.path.join(source_dir, "frontend_agglomerate.cpp"),
     ]
-    source_files += glob.glob(source_dir + '/backend/*.hpp')
+    source_files += glob.glob(source_dir + "/backend/*.hpp")
     source_files.sort()
-    source_files_hashes = [ hashlib.md5(open(f, 'r').read().encode('utf-8')).hexdigest() for f in source_files ]
+    source_files_hashes = [
+        hashlib.md5(open(f).read().encode("utf-8")).hexdigest() for f in source_files
+    ]
 
-    key = scoring_function, discretize_queue, source_files_hashes, sys.version_info, sys.executable, Cython.__version__
-    module_name = 'waterz_' + hashlib.md5(str(key).encode('utf-8')).hexdigest()
-    lib_dir=os.path.expanduser('~/.cython/inline')
+    key = (
+        scoring_function,
+        discretize_queue,
+        source_files_hashes,
+        sys.version_info,
+        sys.executable,
+        Cython.__version__,
+    )
+    module_name = "waterz_" + hashlib.md5(str(key).encode("utf-8")).hexdigest()
+    lib_dir = os.path.expanduser("~/.cython/inline")
 
-    # since this could be called concurrently, there is no good way to check
-    # whether the directory already exists
-    try:
-        os.makedirs(lib_dir)
-    except:
-        pass
+    os.makedirs(lib_dir, exist_ok=True)
 
     # make sure the same module is not build concurrently
-    with open(os.path.join(lib_dir, module_name + '.lock'), 'w') as lock_file:
+    with open(os.path.join(lib_dir, module_name + ".lock"), "w") as lock_file:
         fcntl.lockf(lock_file, fcntl.LOCK_EX)
 
         try:
-
             if lib_dir not in sys.path:
                 sys.path.append(lib_dir)
             if force_rebuild:
@@ -188,11 +215,10 @@ def agglomerate(
             print("Re-using already compiled waterz version")
 
         except ImportError:
-
             print("Compiling waterz in " + str(lib_dir))
 
-            cython_include_dirs = ['.']
-            ctx = Context(cython_include_dirs, default_options)
+            cython_include_dirs = ["."]
+            Context(cython_include_dirs, default_options)
 
             include_dir = os.path.join(lib_dir, module_name)
             if not os.path.exists(include_dir):
@@ -201,54 +227,60 @@ def agglomerate(
             include_dirs = [
                 source_dir,
                 include_dir,
-                os.path.join(source_dir, 'backend'),
+                os.path.join(source_dir, "backend"),
                 os.path.dirname(get_python_inc()),
                 numpy.get_include(),
             ]
 
-            scoring_function_header = os.path.join(include_dir, 'ScoringFunction.h')
-            with open(scoring_function_header, 'w') as f:
-                f.write('typedef %s ScoringFunctionType;'%scoring_function)
+            scoring_function_header = os.path.join(include_dir, "ScoringFunction.h")
+            with open(scoring_function_header, "w") as f:
+                f.write(f"typedef {scoring_function} ScoringFunctionType;")
 
-            queue_header = os.path.join(include_dir, 'Queue.h')
-            with open(queue_header, 'w') as f:
+            queue_header = os.path.join(include_dir, "Queue.h")
+            with open(queue_header, "w") as f:
                 if discretize_queue == 0:
-                    f.write('template<typename T, typename S> using QueueType = PriorityQueue<T, S>;')
+                    f.write(
+                        "template<typename T, typename S> using "
+                        "QueueType = PriorityQueue<T, S>;"
+                    )
                 else:
-                    f.write('template<typename T, typename S> using QueueType = BinQueue<T, S, %d>;'%discretize_queue)
+                    f.write(
+                        "template<typename T, typename S> using "
+                        f"QueueType = BinQueue<T, S, {discretize_queue}>;"
+                    )
 
             # cython requires that the pyx file has the same name as the module
             shutil.copy(
-                    os.path.join(source_dir, 'agglomerate.pyx'),
-                    os.path.join(lib_dir, module_name + '.pyx')
+                os.path.join(source_dir, "agglomerate.pyx"),
+                os.path.join(lib_dir, module_name + ".pyx"),
             )
             shutil.copy(
-                    os.path.join(source_dir, 'frontend_agglomerate.cpp'),
-                    os.path.join(lib_dir, module_name + '_frontend_agglomerate.cpp')
+                os.path.join(source_dir, "frontend_agglomerate.cpp"),
+                os.path.join(lib_dir, module_name + "_frontend_agglomerate.cpp"),
             )
 
-            # Remove the "-Wstrict-prototypes" compiler option, which isn't valid 
+            # Remove the "-Wstrict-prototypes" compiler option, which isn't valid
             # for C++.
             cfg_vars = get_config_vars()
             if "CFLAGS" in cfg_vars:
                 cfg_vars["CFLAGS"] = cfg_vars["CFLAGS"].replace("-Wstrict-prototypes", "")
 
             extension = Extension(
-                    module_name,
-                    sources = [
-                        os.path.join(lib_dir, module_name + '.pyx'),
-                        os.path.join(lib_dir, module_name + '_frontend_agglomerate.cpp')
-                    ],
-                    include_dirs=include_dirs,
-                    language='c++',
-                    extra_link_args=['-std=c++11'],
-                    extra_compile_args=['-std=c++11', '-w']
+                module_name,
+                sources=[
+                    os.path.join(lib_dir, module_name + ".pyx"),
+                    os.path.join(lib_dir, module_name + "_frontend_agglomerate.cpp"),
+                ],
+                include_dirs=include_dirs,
+                language="c++",
+                extra_link_args=["-std=c++11"],
+                extra_compile_args=["-std=c++11", "-w"],
             )
             build_extension = build_ext(Distribution())
             build_extension.finalize_options()
             build_extension.extensions = cythonize([extension], quiet=True, nthreads=2)
             build_extension.build_temp = lib_dir
-            build_extension.build_lib  = lib_dir
+            build_extension.build_lib = lib_dir
             build_extension.run()
 
     return __import__(module_name).agglomerate(
@@ -259,4 +291,5 @@ def agglomerate(
         aff_threshold_low,
         aff_threshold_high,
         return_merge_history,
-        return_region_graph)
+        return_region_graph,
+    )
