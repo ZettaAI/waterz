@@ -1,14 +1,16 @@
 [build-system]
-requires = ["setuptools>=69", "wheel", "Cython>=0.29", "numpy>=1.20"]
+requires = ["setuptools>=69", "wheel", "Cython>=0.29", "numpy>=1.20", "setuptools-scm"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools_scm]
 
 [project]
 name = "waterz"
-version = "0.9.6"
+dynamic = ["version"]
 description = "Simple watershed and agglomeration for affinity graphs."
 readme = "README.md"
 requires-python = ">=3.9"
-license = { text = "MIT" }
+license = "MIT"
 authors = [{ name = "Jan Funke" }, { name = "Jingpeng Wu" }]
 classifiers = [
 	"Programming Language :: Python :: 3",
@@ -17,7 +19,6 @@ classifiers = [
 	"Programming Language :: Python :: 3.11",
 	"Programming Language :: Python :: 3.12",
 	"Programming Language :: Python :: 3.13",
-	"License :: OSI Approved :: MIT License",
 	"Operating System :: OS Independent",
 ]
 dependencies = ["numpy>=1.20"]

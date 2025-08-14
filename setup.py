@@ -2,8 +2,7 @@ import sys
 
 import numpy
 from Cython.Build import cythonize
-from setuptools import setup
-from setuptools.extension import Extension
+from setuptools import Extension, setup
 
 include_dirs = [
     "src/waterz",
