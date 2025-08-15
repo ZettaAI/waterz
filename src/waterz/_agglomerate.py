@@ -4,9 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
-import numpy
 import numpy as np
-import witty
 
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
@@ -29,8 +27,7 @@ def agglomerate(
     discretize_queue: int = 0,
     force_rebuild: bool = False,
 ) -> Iterator[tuple | NDArray[np.uint64]]:
-    """
-    Compute segmentations from an affinity graph for several thresholds.
+    """Compute segmentations from an affinity graph for several thresholds.
 
     Passed volumes need to be converted into contiguous memory arrays. This will
     be done for you if needed, but you can save memory by making sure your
@@ -145,11 +142,15 @@ def agglomerate(
             affs, range(100,10000,100), gt, return_merge_history = True):
             # ...
     """
+    import witty
+
     with TemporaryDirectory() as tmpdir:
+        # supply #include <ScoringFunction.h> in frontend_agglomerate.h
         tmp_path = Path(tmpdir)
         scoredef = f"typedef {scoring_function} ScoringFunctionType;"
         (tmp_path / "ScoringFunction.h").write_text(scoredef)
 
+        # supply #include <Queue.h> in frontend_agglomerate.h
         queue_src = "template<typename T, typename S> using QueueType = " + (
             "PriorityQueue<T, S>;"
             if discretize_queue == 0
@@ -157,6 +158,7 @@ def agglomerate(
         )
         (tmp_path / "Queue.h").write_text(queue_src)
 
+        # compile module
         module = witty.compile_cython(
             (HERE / "agglomerate.pyx").read_text(),
             source_files=[str(HERE / "frontend_agglomerate.cpp")],
@@ -166,13 +168,15 @@ def agglomerate(
                 str(HERE),
                 tmpdir,
                 str(HERE / "backend"),
-                numpy.get_include(),
+                np.get_include(),
                 "/opt/homebrew/include",
             ],
             language="c++",
             quiet=True,
+            force_rebuild=force_rebuild,
         )
 
+    # call compiled function
     return module.agglomerate(
         affs,
         thresholds,
