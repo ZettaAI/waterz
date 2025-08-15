@@ -1,5 +1,11 @@
 [build-system]
-requires = ["setuptools>=69", "wheel", "Cython>=0.29", "numpy>=1.20", "setuptools-scm"]
+requires = [
+	"setuptools>=69",
+	"wheel",
+	"Cython>=0.29",
+	"numpy>=1.20",
+	"setuptools-scm",
+]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools_scm]
@@ -20,8 +26,9 @@ classifiers = [
 	"Programming Language :: Python :: 3.12",
 	"Programming Language :: Python :: 3.13",
 	"Operating System :: OS Independent",
+	"Typing :: Typed",
 ]
-dependencies = ["numpy>=1.20"]
+dependencies = ["numpy>=1.20", "witty[cython]>=0.3.1"]
 
 [project.urls]
 Homepage = "https://github.com/funkey/waterz"
