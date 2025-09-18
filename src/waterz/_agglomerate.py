@@ -1,21 +1,17 @@
 from __future__ import annotations
 
-import fcntl
-import glob
-import hashlib
-import os
-import shutil
-import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING
 
-import Cython
-import numpy
 import numpy as np
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterator, Sequence
 
     from numpy.typing import NDArray
+
+HERE = Path(__file__).parent
 
 
 def agglomerate(
@@ -30,9 +26,8 @@ def agglomerate(
     scoring_function: str = "OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>",
     discretize_queue: int = 0,
     force_rebuild: bool = False,
-):
-    """
-    Compute segmentations from an affinity graph for several thresholds.
+) -> Iterator[tuple | NDArray[np.uint64]]:
+    """Compute segmentations from an affinity graph for several thresholds.
 
     Passed volumes need to be converted into contiguous memory arrays. This will
     be done for you if needed, but you can save memory by making sure your
@@ -147,126 +142,42 @@ def agglomerate(
             affs, range(100,10000,100), gt, return_merge_history = True):
             # ...
     """
+    import witty
 
-    from distutils.command.build_ext import build_ext
-    from distutils.core import Distribution, Extension
-    from distutils.sysconfig import get_config_vars, get_python_inc
+    with TemporaryDirectory() as tmpdir:
+        # supply #include <ScoringFunction.h> in frontend_agglomerate.h
+        tmp_path = Path(tmpdir)
+        scoredef = f"typedef {scoring_function} ScoringFunctionType;"
+        (tmp_path / "ScoringFunction.h").write_text(scoredef)
 
-    from Cython.Build.Dependencies import cythonize
-    from Cython.Compiler.Main import Context, default_options
+        # supply #include <Queue.h> in frontend_agglomerate.h
+        queue_src = "template<typename T, typename S> using QueueType = " + (
+            "PriorityQueue<T, S>;"
+            if discretize_queue == 0
+            else f"BinQueue<T, S, {discretize_queue}>;"
+        )
+        (tmp_path / "Queue.h").write_text(queue_src)
 
-    # compile agglomerate.pyx for given scoring function
+        # compile module
+        module = witty.compile_cython(
+            (HERE / "agglomerate.pyx").read_text(),
+            source_files=[str(HERE / "frontend_agglomerate.cpp")],
+            extra_link_args=["-std=c++11"],
+            extra_compile_args=["-std=c++11", "-w"],
+            include_dirs=[
+                str(HERE),
+                tmpdir,
+                str(HERE / "backend"),
+                np.get_include(),
+                "/opt/homebrew/include",
+            ],
+            language="c++",
+            quiet=True,
+            force_rebuild=force_rebuild,
+        )
 
-    source_dir = os.path.dirname(os.path.abspath(__file__))
-    source_files = [
-        os.path.join(source_dir, "agglomerate.pyx"),
-        os.path.join(source_dir, "frontend_agglomerate.h"),
-        os.path.join(source_dir, "frontend_agglomerate.cpp"),
-    ]
-    source_files += glob.glob(source_dir + "/backend/*.hpp")
-    source_files.sort()
-    source_files_hashes = [
-        hashlib.md5(open(f).read().encode("utf-8")).hexdigest()  # noqa: S324
-        for f in source_files
-    ]
-
-    key = (
-        scoring_function,
-        discretize_queue,
-        source_files_hashes,
-        sys.version_info,
-        sys.executable,
-        getattr(Cython, "__version__", "unknown"),
-    )
-    module_name = "waterz_" + hashlib.md5(str(key).encode("utf-8")).hexdigest()  # noqa: S324
-    lib_dir = os.path.expanduser("~/.cython/inline")
-
-    os.makedirs(lib_dir, exist_ok=True)
-
-    # make sure the same module is not build concurrently
-    with open(os.path.join(lib_dir, module_name + ".lock"), "w") as lock_file:
-        fcntl.lockf(lock_file, fcntl.LOCK_EX)
-
-        try:
-            if lib_dir not in sys.path:
-                sys.path.append(lib_dir)
-            if force_rebuild:
-                raise ImportError
-            else:
-                __import__(module_name)
-
-            print("Re-using already compiled waterz version")
-
-        except ImportError:
-            print("Compiling waterz in " + str(lib_dir))
-
-            cython_include_dirs = ["."]
-            Context(cython_include_dirs, default_options)
-
-            include_dir = os.path.join(lib_dir, module_name)
-            if not os.path.exists(include_dir):
-                os.makedirs(include_dir)
-
-            include_dirs = [
-                source_dir,
-                include_dir,
-                os.path.join(source_dir, "backend"),
-                os.path.dirname(get_python_inc()),
-                numpy.get_include(),
-            ]
-
-            scoring_function_header = os.path.join(include_dir, "ScoringFunction.h")
-            with open(scoring_function_header, "w") as f:
-                f.write(f"typedef {scoring_function} ScoringFunctionType;")
-
-            queue_header = os.path.join(include_dir, "Queue.h")
-            with open(queue_header, "w") as f:
-                if discretize_queue == 0:
-                    f.write(
-                        "template<typename T, typename S> using "
-                        "QueueType = PriorityQueue<T, S>;"
-                    )
-                else:
-                    f.write(
-                        "template<typename T, typename S> using "
-                        f"QueueType = BinQueue<T, S, {discretize_queue}>;"
-                    )
-
-            # cython requires that the pyx file has the same name as the module
-            shutil.copy(
-                os.path.join(source_dir, "agglomerate.pyx"),
-                os.path.join(lib_dir, module_name + ".pyx"),
-            )
-            shutil.copy(
-                os.path.join(source_dir, "frontend_agglomerate.cpp"),
-                os.path.join(lib_dir, module_name + "_frontend_agglomerate.cpp"),
-            )
-
-            # Remove the "-Wstrict-prototypes" compiler option, which isn't valid
-            # for C++.
-            cfg_vars = get_config_vars()
-            if "CFLAGS" in cfg_vars:
-                cfg_vars["CFLAGS"] = cfg_vars["CFLAGS"].replace("-Wstrict-prototypes", "")
-
-            extension = Extension(
-                module_name,
-                sources=[
-                    os.path.join(lib_dir, module_name + ".pyx"),
-                    os.path.join(lib_dir, module_name + "_frontend_agglomerate.cpp"),
-                ],
-                include_dirs=include_dirs,
-                language="c++",
-                extra_link_args=["-std=c++11"],
-                extra_compile_args=["-std=c++11", "-w"],
-            )
-            build_extension = build_ext(Distribution())
-            build_extension.finalize_options()
-            build_extension.extensions = cythonize([extension], quiet=True, nthreads=2)
-            build_extension.build_temp = lib_dir
-            build_extension.build_lib = lib_dir
-            build_extension.run()
-
-    return __import__(module_name).agglomerate(
+    # call compiled function
+    return module.agglomerate(
         affs,
         thresholds,
         gt,
