@@ -164,6 +164,16 @@ getRegionGraph(WaterzState& state) {
 	return regionMerging->extractRegionGraph<ScoredEdge>(*scoringFunction);
 }
 
+std::vector<double>
+getRegionGraphMeta(WaterzState& state) {
+
+	WaterzContext* context = WaterzContext::get(state.context);
+	std::shared_ptr<RegionMergingType> regionMerging = context->regionMerging;
+	std::shared_ptr<ScoringFunctionType> scoringFunction = context->scoringFunction;
+
+	return regionMerging->extractRegionGraphMeta<double>(*scoringFunction, *(context->statisticsProvider));
+}
+
 void
 free(WaterzState& state) {
 

@@ -15,14 +15,15 @@ HERE = Path(__file__).parent
 
 
 def agglomerate(
-    affs: NDArray[np.float32],
-    thresholds: Sequence[float],
+    affs: NDArray[np.float32] | None = None,
+    thresholds: Sequence[float] | None = None,
     gt: NDArray[np.uint32] | None = None,
     fragments: NDArray[np.uint64] | None = None,
     aff_threshold_low: float = 0.0001,
     aff_threshold_high: float = 0.9999,
     return_merge_history: bool = False,
     return_region_graph: bool = False,
+    return_region_graph_metadata: bool = False,
     scoring_function: str = "OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>",
     discretize_queue: int = 0,
     force_rebuild: bool = False,
@@ -186,4 +187,5 @@ def agglomerate(
         aff_threshold_high,
         return_merge_history,
         return_region_graph,
+        return_region_graph_metadata,
     )
