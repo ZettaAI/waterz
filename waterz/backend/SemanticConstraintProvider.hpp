@@ -65,6 +65,8 @@ public:
             return false;
         if (max_sem2 < semantic_signal_ratio * total_sem2)
             return false;
+        if (max_sem1_label == 0 || max_sem2_label == 0)
+            return false;
         if (max_sem1_label == max_sem2_label)
             return false;
         return true;
