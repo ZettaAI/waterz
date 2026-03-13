@@ -13,6 +13,76 @@
 std::map<int, WaterzContext*> WaterzContext::_contexts;
 int WaterzContext::_nextId = 0;
 
+std::vector<ScoredEdge> getRegionGraph(WaterzState& state);
+std::vector<double> getRegionGraphMeta(WaterzState& state);
+
+WaterzState
+initialize_with_rag(
+		const std::vector<ScoredEdge>& rag,
+		const std::vector<double>& rag_metadata,
+		SegID* segmentation_data,
+		std::size_t     width,
+		std::size_t     height,
+		std::size_t     depth) {
+
+	std::size_t maxId = 0;
+	for (const auto& edge : rag) {
+		auto max_uv = std::max(edge.u, edge.v);
+		maxId = std::max(max_uv, maxId);
+	}
+
+	std::size_t numNodes = maxId + 1;
+	std::cout << "creating region graph for " << numNodes << " nodes" << std::endl;
+
+	std::shared_ptr<RegionGraphType> regionGraph(
+			new RegionGraphType(numNodes)
+	);
+
+	std::cout << "creating statistics provider" << std::endl;
+	std::shared_ptr<StatisticsProviderType> statisticsProvider(
+			new StatisticsProviderType(*regionGraph)
+	);
+
+	std::cout << "initializing region graph..." << std::endl;
+
+	initialize_with_region_graph<SegID>(
+			*statisticsProvider,
+			*regionGraph,
+			rag,
+			rag_metadata);
+
+	std::shared_ptr<ScoringFunctionType> scoringFunction(
+			new ScoringFunctionType(*regionGraph, *statisticsProvider)
+	);
+
+	std::shared_ptr<RegionMergingType> regionMerging(
+			new RegionMergingType(*regionGraph)
+	);
+
+	WaterzContext* context = WaterzContext::createNew();
+	context->regionGraph        = regionGraph;
+	context->regionMerging      = regionMerging;
+	context->scoringFunction    = scoringFunction;
+	context->statisticsProvider = statisticsProvider;
+	// context->segmentation       = segmentation_data;
+
+	if (segmentation_data != NULL) {
+		// wrap data (no copy)
+		volume_ref_ptr<SegID> segmentation(
+				new volume_ref<SegID>(
+						segmentation_data,
+						boost::extents[width][height][depth]
+				)
+		);
+		context->segmentation = segmentation;
+	}
+
+	WaterzState initial_state;
+	initial_state.context = context->id;
+
+	return initial_state;
+}
+
 WaterzState
 initialize(
 		std::size_t     width,
@@ -132,7 +202,7 @@ mergeUntil(
 			threshold,
 			mergeHistoryVisitor);
 
-	if (merged) {
+	if (merged && context->segmentation) {
 
 		std::cout << "extracting segmentation" << std::endl;
 

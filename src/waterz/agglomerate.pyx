@@ -4,9 +4,30 @@ from libcpp cimport bool
 import numpy as np
 cimport numpy as np
 
+def agglomerate_rag(
+        rag,
+        rag_metadata,
+        thresholds,
+        fragments=None,
+        ):
+
+    if fragments is not None and not fragments.flags['C_CONTIGUOUS']:
+        print("Creating memory-contiguous fragments arrray (avoid this by passing C_CONTIGUOUS arrays)")
+        fragments = np.ascontiguousarray(fragments)
+
+    cdef WaterzState state = __initialize_with_rag(rag, rag_metadata, fragments)
+
+    thresholds.sort()
+    for threshold in thresholds:
+        merge_history = mergeUntil(state, threshold)
+        yield merge_history, fragments
+
+    free(state)
+
+
 def agglomerate(
-        affs=None,
-        thresholds=None,
+        affs,
+        thresholds,
         gt=None,
         fragments=None,
         aff_threshold_low=0.0001,
@@ -102,6 +123,25 @@ def __initialize(
         aff_threshold_high,
         find_fragments)
 
+def __initialize_with_rag(
+        rag,
+        rag_metadata,
+        np.ndarray[uint64_t, ndim=3]     segmentation = None):
+
+    cdef uint64_t* segmentation_data = NULL
+    shape = (0, 0, 0)
+
+    if segmentation is not None:
+        segmentation_data = &segmentation[0,0,0]
+        shape = (segmentation.shape[0], segmentation.shape[1], segmentation.shape[2])
+
+
+    return initialize_with_rag(
+        rag,
+        rag_metadata,
+        segmentation_data,
+        shape[0], shape[1], shape[2])
+
 cdef extern from "frontend_agglomerate.h":
 
     struct Metrics:
@@ -135,6 +175,14 @@ cdef extern from "frontend_agglomerate.h":
             float           affThresholdLow,
             float           affThresholdHigh,
             bool            findFragments);
+
+    WaterzState initialize_with_rag(
+            const vector[ScoredEdge]& rag,
+            const vector[double]& rag_metadata,
+            uint64_t*       segmentation_data,
+            size_t          width,
+            size_t          height,
+            size_t          depth,);
 
     vector[Merge] mergeUntil(
             WaterzState& state,
