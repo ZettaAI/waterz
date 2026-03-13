@@ -10,6 +10,7 @@
 
 #include "RegionGraph.hpp"
 #include "PriorityQueue.hpp"
+#include "ConstraintProvider.hpp"
 
 template <typename NodeIdType, typename ScoreType, template <typename T, typename S> class QueueType = PriorityQueue>
 class IterativeRegionMerging {
@@ -37,6 +38,7 @@ public:
 	std::size_t mergeUntil(
 			EdgeScoringFunction& edgeScoringFunction,
 			StatisticsProviderType& statisticsProvider,
+			std::vector<ConstraintProvider*>& constraints,
 			ScoreType threshold,
 			Visitor& visitor) {
 
@@ -100,12 +102,23 @@ public:
 				continue;
 			}
 
-			NodeIdType newRegion = mergeRegions(next, statisticsProvider);
+			NodeIdType a = _regionGraph.edge(next).u;
+			NodeIdType b = _regionGraph.edge(next).v;
+
+			bool is_constrained = false;
+			for (auto constraint : constraints) {
+				is_constrained |= constraint->isConstrained(a, b, score);
+			}
+
+			if (is_constrained) {
+				continue;  // skip merging
+			}
+
+			NodeIdType newRegion = mergeRegions(next, statisticsProvider, constraints);
 			merged++;
 
 			visitor.onMerge(
-					_regionGraph.edge(next).u,
-					_regionGraph.edge(next).v,
+					a, b,
 					newRegion,
 					score);
 		}
@@ -163,6 +176,31 @@ public:
 		return edges;
 	}
 
+	template <typename EdgeMetadata, typename EdgeScoringFunction, typename StatisticsProviderType>
+	std::vector<EdgeMetadata> extractRegionGraphMeta(EdgeScoringFunction& edgeScoringFunction, StatisticsProviderType& statisticsProvider) {
+
+		std::vector<EdgeMetadata> ret;
+
+		for (EdgeIdType e = 0; e < _regionGraph.numEdges(); e++) {
+
+			if (_deleted[e])
+				continue;
+
+			ScoreType score;
+			if (_stale[e])
+				score = scoreEdge(e, edgeScoringFunction);
+			else
+				score = _edgeScores[e];
+
+			if (score < _mergedUntil)
+				continue;
+
+			ret.emplace_back(statisticsProvider.getEdgeMetadata(e));
+		}
+
+		return ret;
+	}
+
 private:
 
 	/**
@@ -171,13 +209,18 @@ private:
 	template <typename StatisticsProviderType>
 	NodeIdType mergeRegions(
 			EdgeIdType e,
-			StatisticsProviderType& statisticsProvider) {
+			StatisticsProviderType& statisticsProvider,
+			std::vector<ConstraintProvider*>& constraints) {
 
 		NodeIdType a = _regionGraph.edge(e).u;
 		NodeIdType b = _regionGraph.edge(e).v;
 
 		// assign new node a = a + b
 		bool nodeStatisticsChanged = statisticsProvider.notifyNodeMerge(b, a);
+
+		for (auto constraint : constraints) {
+			nodeStatisticsChanged |= constraint->notifyNodeMerge(b, a);
+		}
 
 		// set path
 		_rootPaths[b] = a;
