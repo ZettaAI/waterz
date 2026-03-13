@@ -37,6 +37,9 @@ public:
 	 */
 	template<typename EdgeIdType>
 	inline bool notifyEdgeMerge(EdgeIdType from, EdgeIdType to) { return false; }
+
+	template<typename EdgeIdType>
+	inline double getEdgeMetadata(EdgeIdType e) const { return 0; }
 };
 
 #endif // WATERZ_STATISTICS_PROVIDER_H__

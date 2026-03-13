@@ -157,6 +157,7 @@ std::vector<Merge> mergeUntil(
 		float        threshold);
 
 std::vector<ScoredEdge> getRegionGraph(WaterzState& state);
+std::vector<double> getRegionGraphMeta(WaterzState& state);
 
 void free(WaterzState& state);
 
