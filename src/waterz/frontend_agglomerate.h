@@ -44,6 +44,8 @@ struct Merge {
 
 struct ScoredEdge {
 
+	ScoredEdge() {};
+
 	ScoredEdge(SegID u_, SegID v_, ScoreValue score_) :
 		u(u_),
 		v(v_),
@@ -151,6 +153,14 @@ WaterzState initialize(
 		AffValue        affThresholdLow  = 0.0001,
 		AffValue        affThresholdHigh = 0.9999,
 		bool            findFragments = true);
+
+WaterzState initialize_with_rag(
+		const std::vector<ScoredEdge>& rag,
+		const std::vector<double>& rag_metadata,
+		SegID*          segmentation_data,
+		std::size_t     width,
+		std::size_t     height,
+		std::size_t     depth);
 
 std::vector<Merge> mergeUntil(
 		WaterzState& state,

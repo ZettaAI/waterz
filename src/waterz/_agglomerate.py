@@ -19,6 +19,8 @@ def agglomerate(
     thresholds: Sequence[float] | None = None,
     gt: NDArray[np.uint32] | None = None,
     fragments: NDArray[np.uint64] | None = None,
+    input_rag=None,
+    input_rag_metadata=None,
     aff_threshold_low: float = 0.0001,
     aff_threshold_high: float = 0.9999,
     return_merge_history: bool = False,
@@ -178,6 +180,14 @@ def agglomerate(
         )
 
     # call compiled function
+    if input_rag is not None or input_rag_metadata is not None:
+        return module.agglomerate_rag(
+            rag=input_rag,
+            rag_metadata=input_rag_metadata,
+            thresholds=thresholds,
+            fragments=fragments,
+        )
+
     return module.agglomerate(
         affs,
         thresholds,
