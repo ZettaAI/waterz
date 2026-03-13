@@ -10,6 +10,10 @@
 #include "backend/basic_watershed.hpp"
 #include "backend/region_graph.hpp"
 
+#include "backend/SemanticConstraintProvider.hpp"
+#include "backend/SegConstraintProvider.hpp"
+#include "backend/SizeHeuristicConstraintProvider.hpp"
+
 std::map<int, WaterzContext*> WaterzContext::_contexts;
 int WaterzContext::_nextId = 0;
 
@@ -91,8 +95,16 @@ initialize(
 		const AffValue* affinity_data,
 		SegID*          segmentation_data,
 		const GtID*     ground_truth_data,
+		const SemValue* semantic_data,
+		const SegID*    segconstraint_data,
 		AffValue        affThresholdLow,
 		AffValue        affThresholdHigh,
+		AffValue        semantic_aff_threshold,
+		size_t          semantic_size_threshold,
+		AffValue        semantic_signal_ratio,
+		AffValue        size_heuristic_aff_threshold,
+		size_t          size_heuristic_small_threshold,
+		size_t          size_heuristic_large_threshold,
 		bool            findFragments) {
 
 	std::size_t num_voxels = width*height*depth;
@@ -114,15 +126,10 @@ initialize(
 	counts_t<std::size_t> sizes;
 
 	if (findFragments) {
-
 		std::cout << "performing initial watershed segmentation..." << std::endl;
-
 		watershed(affinities, affThresholdLow, affThresholdHigh, *segmentation, sizes);
-
 	} else {
-
 		std::cout << "counting regions and sizes..." << std::endl;
-
 		std::size_t maxId = *std::max_element(segmentation_data, segmentation_data + num_voxels);
 		sizes.resize(maxId + 1);
 		for (std::size_t i = 0; i < num_voxels; i++)
@@ -158,12 +165,47 @@ initialize(
 			new RegionMergingType(*regionGraph)
 	);
 
+	std::shared_ptr<vector<ConstraintProvider*>> constraints(
+		new vector<ConstraintProvider*>()
+	);
+
+	if (semantic_data != NULL) {
+		std::cout << "getting semantic information..." << std::endl;
+		constraints->push_back(
+			new SemanticConstraintProvider<RegionGraphType, SemValue, SegID>(
+				semantic_data, segmentation_data, num_voxels,
+				semantic_aff_threshold,
+				semantic_size_threshold,
+				semantic_signal_ratio
+			)
+		);
+	}
+
+	if (segconstraint_data != NULL) {
+		std::cout << "getting seg constraint information..." << std::endl;
+		constraints->push_back(
+			new SegConstraintProvider<RegionGraphType, SegID>(
+				segconstraint_data, segmentation_data, num_voxels
+			)
+		);
+	}
+
+	constraints->push_back(
+		new SizeHeuristicConstraintProvider<RegionGraphType, SegID>(
+			segmentation_data, num_voxels,
+			size_heuristic_aff_threshold,
+			size_heuristic_small_threshold,
+			size_heuristic_large_threshold
+		)
+	);
+
 	WaterzContext* context = WaterzContext::createNew();
 	context->regionGraph        = regionGraph;
 	context->regionMerging      = regionMerging;
 	context->scoringFunction    = scoringFunction;
 	context->statisticsProvider = statisticsProvider;
 	context->segmentation       = segmentation;
+	context->constraints 		= constraints;
 
 	WaterzState initial_state;
 	initial_state.context = context->id;
@@ -199,8 +241,10 @@ mergeUntil(
 	std::size_t merged = context->regionMerging->mergeUntil(
 			*context->scoringFunction,
 			*context->statisticsProvider,
+			*context->constraints,
 			threshold,
-			mergeHistoryVisitor);
+			mergeHistoryVisitor
+		);
 
 	if (merged && context->segmentation) {
 
