@@ -4,7 +4,6 @@
 
 #include <cstddef>
 #include <iostream>
-#include <map>
 
 /**
  * Extract the region graph from a segmentation. Edges are annotated with the 
@@ -40,10 +39,6 @@ get_region_graph(
 	std::ptrdiff_t ydim = aff.shape()[2];
 	std::ptrdiff_t xdim = aff.shape()[3];
 
-	// list of affinities between pairs of regions
-	std::vector<std::map<ID, std::vector<F>>> affinities(max_segid+1);
-
-	EdgeIdType e;
 	std::size_t p[3];
 	for (p[0] = 0; p[0] < zdim; ++p[0])
 		for (p[1] = 0; p[1] < ydim; ++p[1])
@@ -61,24 +56,15 @@ get_region_graph(
 
 					if (id1 != id2) {
 
-						auto mm = std::minmax(id1, id2);
-						affinities[mm.first][mm.second].push_back(aff[d][p[0]][p[1]][p[2]]);
+						EdgeIdType e = rg.findEdge(id1, id2);
+						if (e == RegionGraphType::NoEdge) {
+							e = rg.addEdge(id1, id2);
+							statisticsProvider.notifyNewEdge(e);
+						}
+						statisticsProvider.addAffinity(e, aff[d][p[0]][p[1]][p[2]]);
 					}
 				}
 			}
-
-	for (ID id1 = 1; id1 <= max_segid; ++id1) {
-		for (const auto& p: affinities[id1]) {
-
-			// p.first is ID
-			// p.second is list of affiliated edges
-			EdgeIdType e = rg.addEdge(id1, p.first);
-			statisticsProvider.notifyNewEdge(e);
-
-			for (F affinity : p.second)
-				statisticsProvider.addAffinity(e, affinity);
-        }
-    }
 
 	std::cout << "Region graph number of edges: " << rg.edges().size() << std::endl;
 }
