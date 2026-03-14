@@ -14,8 +14,7 @@ private:
 
 public:
 	SizeHeuristicConstraintProvider(
-            const SegType *seg_data,
-            size_t num_voxels,
+            const std::vector<size_t>& precomputed_sizes,
             float size_heuristic_aff_threshold,
             size_t size_heuristic_small_threshold,
             size_t size_heuristic_large_threshold
@@ -24,8 +23,9 @@ public:
     size_heuristic_small_threshold(size_heuristic_small_threshold),
     size_heuristic_large_threshold(size_heuristic_large_threshold)
     {
-		for (std::size_t i = 0; i < num_voxels; i++) {
-            _size[seg_data[i]] += 1;
+		for (std::size_t i = 0; i < precomputed_sizes.size(); i++) {
+            if (precomputed_sizes[i] > 0)
+                _size[static_cast<SegType>(i)] = precomputed_sizes[i];
         }
     }
 
