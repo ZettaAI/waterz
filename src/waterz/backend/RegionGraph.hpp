@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <vector>
+#include <unordered_map>
 #include <limits>
 #include <cassert>
 
@@ -164,7 +165,8 @@ public:
 
 	RegionGraph(ID numNodes = 0) :
 		_numNodes(numNodes),
-		_incEdges(numNodes) {}
+		_incEdges(numNodes),
+		_adjMap(numNodes) {}
 
 	ID numNodes() const { return _numNodes; }
 
@@ -175,6 +177,7 @@ public:
 		NodeIdType id = _numNodes;
 		_numNodes++;
 		_incEdges.emplace_back();
+		_adjMap.emplace_back();
 
 		for (RegionGraphNodeMapBase<ID>* map : _nodeMaps)
 			map->onNewNode(id);
@@ -189,6 +192,8 @@ public:
 
 		_incEdges[u].push_back(id);
 		_incEdges[v].push_back(id);
+		_adjMap[u][v] = id;
+		_adjMap[v][u] = id;
 
 		for (RegionGraphEdgeMapBase<ID>* map : _edgeMaps)
 			map->onNewEdge(id);
@@ -198,8 +203,12 @@ public:
 
 	void removeEdge(EdgeIdType e) {
 
-		removeIncEdge(_edges[e].u, e);
-		removeIncEdge(_edges[e].v, e);
+		NodeIdType u = _edges[e].u;
+		NodeIdType v = _edges[e].v;
+		removeIncEdge(u, e);
+		removeIncEdge(v, e);
+		_adjMap[u].erase(v);
+		_adjMap[v].erase(u);
 	}
 
 	void moveEdge(EdgeIdType e, NodeIdType u, NodeIdType v) {
@@ -273,22 +282,9 @@ public:
 	 */
 	inline EdgeIdType findEdge(NodeIdType u, NodeIdType v) {
 
-		return findEdge(u, v, (_incEdges[u].size() < _incEdges[v].size() ? _incEdges[u] : _incEdges[v]));
-	}
-
-	/**
-	 * Same as findEdge(u, v), but restricted to edges in pool.
-	 */
-	inline EdgeIdType findEdge(NodeIdType u, NodeIdType v, const std::vector<EdgeIdType>& pool) {
-
-		NodeIdType min = std::min(u, v);
-		NodeIdType max = std::max(u, v);
-
-		for (EdgeIdType e : pool)
-			if (std::min(_edges[e].u, _edges[e].v) == min &&
-				std::max(_edges[e].u, _edges[e].v) == max)
-				return e;
-
+		auto it = _adjMap[u].find(v);
+		if (it != _adjMap[u].end())
+			return it->second;
 		return NoEdge;
 	}
 
@@ -323,15 +319,27 @@ private:
 
 	inline void moveEdgeNodeV(EdgeIdType e, NodeIdType v) {
 
-		removeIncEdge(_edges[e].v, e);
+		NodeIdType oldV = _edges[e].v;
+		NodeIdType otherNode = _edges[e].u;
+		removeIncEdge(oldV, e);
+		_adjMap[oldV].erase(otherNode);
+		_adjMap[otherNode].erase(oldV);
 		_incEdges[v].push_back(e);
+		_adjMap[v][otherNode] = e;
+		_adjMap[otherNode][v] = e;
 		_edges[e].v = v;
 	}
 
 	inline void moveEdgeNodeU(EdgeIdType e, NodeIdType u) {
 
-		removeIncEdge(_edges[e].u, e);
+		NodeIdType oldU = _edges[e].u;
+		NodeIdType otherNode = _edges[e].v;
+		removeIncEdge(oldU, e);
+		_adjMap[oldU].erase(otherNode);
+		_adjMap[otherNode].erase(oldU);
 		_incEdges[u].push_back(e);
+		_adjMap[u][otherNode] = e;
+		_adjMap[otherNode][u] = e;
 		_edges[e].u = u;
 	}
 
@@ -349,6 +357,9 @@ private:
 	std::vector<EdgeType> _edges;
 
 	std::vector<std::vector<EdgeIdType>> _incEdges;
+
+	// per-node adjacency map: neighbor -> edge id (O(1) findEdge)
+	std::vector<std::unordered_map<NodeIdType, EdgeIdType>> _adjMap;
 
 	std::vector<RegionGraphNodeMapBase<ID>*> _nodeMaps;
 	std::vector<RegionGraphEdgeMapBase<ID>*> _edgeMaps;
