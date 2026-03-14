@@ -339,7 +339,8 @@ private:
 
 		auto it = std::find(_incEdges[n].begin(), _incEdges[n].end(), e);
 		assert(it != _incEdges[n].end());
-		_incEdges[n].erase(it);
+		std::swap(*it, _incEdges[n].back());
+		_incEdges[n].pop_back();
 		assert(std::find(_incEdges[n].begin(), _incEdges[n].end(), e) == _incEdges[n].end());
 	}
 
