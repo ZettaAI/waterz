@@ -198,7 +198,7 @@ initialize(
 
 	constraints->push_back(
 		new SizeHeuristicConstraintProvider<RegionGraphType, SegID>(
-			segmentation_data, num_voxels,
+			sizes,
 			size_heuristic_aff_threshold,
 			size_heuristic_small_threshold,
 			size_heuristic_large_threshold
