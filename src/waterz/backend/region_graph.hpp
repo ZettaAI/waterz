@@ -39,29 +39,56 @@ get_region_graph(
 	std::ptrdiff_t ydim = aff.shape()[2];
 	std::ptrdiff_t xdim = aff.shape()[3];
 
-	std::size_t p[3];
-	for (p[0] = 0; p[0] < zdim; ++p[0])
-		for (p[1] = 0; p[1] < ydim; ++p[1])
-			for (p[2] = 0; p[2] < xdim; ++p[2]) {
+	// Use raw pointers for direct memory access instead of boost operator[][]
+	const ID* seg_data = seg.data();
+	const F* aff_data = aff.data();
+	const std::size_t slice_size = ydim * xdim;
+	const std::size_t aff_channel_size = zdim * slice_size;
 
-				ID id1 = seg[p[0]][p[1]][p[2]];
-				statisticsProvider.addVoxel(id1, p[2], p[1], p[0]);
+	for (std::ptrdiff_t z = 0; z < zdim; ++z)
+		for (std::ptrdiff_t y = 0; y < ydim; ++y)
+			for (std::ptrdiff_t x = 0; x < xdim; ++x) {
 
-				for (int d = 0; d < 3; d++) {
+				std::size_t idx = z * slice_size + y * xdim + x;
+				ID id1 = seg_data[idx];
+				statisticsProvider.addVoxel(id1, x, y, z);
 
-					if (p[d] == 0)
-						continue;
-
-					ID id2 = seg[p[0]-(d==0)][p[1]-(d==1)][p[2]-(d==2)];
-
+				// d=0: z-affinity, neighbor at z-1
+				if (z > 0) {
+					ID id2 = seg_data[idx - slice_size];
 					if (id1 != id2) {
-
 						EdgeIdType e = rg.findEdge(id1, id2);
 						if (e == RegionGraphType::NoEdge) {
 							e = rg.addEdge(id1, id2);
 							statisticsProvider.notifyNewEdge(e);
 						}
-						statisticsProvider.addAffinity(e, aff[d][p[0]][p[1]][p[2]]);
+						statisticsProvider.addAffinity(e, aff_data[idx]);
+					}
+				}
+
+				// d=1: y-affinity, neighbor at y-1
+				if (y > 0) {
+					ID id2 = seg_data[idx - xdim];
+					if (id1 != id2) {
+						EdgeIdType e = rg.findEdge(id1, id2);
+						if (e == RegionGraphType::NoEdge) {
+							e = rg.addEdge(id1, id2);
+							statisticsProvider.notifyNewEdge(e);
+						}
+						statisticsProvider.addAffinity(e, aff_data[aff_channel_size + idx]);
+					}
+				}
+
+				// d=2: x-affinity, neighbor at x-1
+				if (x > 0) {
+					ID id2 = seg_data[idx - 1];
+					if (id1 != id2) {
+						EdgeIdType e = rg.findEdge(id1, id2);
+						if (e == RegionGraphType::NoEdge) {
+							e = rg.addEdge(id1, id2);
+							statisticsProvider.notifyNewEdge(e);
+						}
+						statisticsProvider.addAffinity(e, aff_data[2 * aff_channel_size + idx]);
 					}
 				}
 			}
