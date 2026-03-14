@@ -39,10 +39,8 @@ public:
     DefaultDict(const V& default_val) : default_value(default_val) {}
 
     V& operator[](const K& key) {
-        if (container.find(key) == container.end()) {
-            container[key] = default_value;
-        }
-        return container[key];
+        auto result = container.emplace(key, default_value);
+        return result.first->second;
     }
 
     V operator[](const K& key) const {
@@ -62,9 +60,7 @@ public:
     // }
 
     void erase(const K& key) {
-        if (container.find(key) != container.end()) {
-            container.erase(key);
-        }
+        container.erase(key);
     }
 
     const std::unordered_map<K, V>& getContainer() const { return container; }
