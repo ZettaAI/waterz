@@ -4,6 +4,7 @@
 #include <iostream>
 #include <vector>
 #include <map>
+#include <unordered_map>
 #include <queue>
 #include <cassert>
 #include <limits>
@@ -367,7 +368,7 @@ private:
 	// root nodes are not in the map
 	//
 	// paths will be compressed when read
-	std::map<NodeIdType, NodeIdType> _rootPaths;
+	std::unordered_map<NodeIdType, NodeIdType> _rootPaths;
 
 	// current state of merging
 	ScoreType _mergedUntil;
