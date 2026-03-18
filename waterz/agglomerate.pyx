@@ -43,7 +43,7 @@ def agglomerate(
         semantic_signal_ratio: float,
 
         semantic_taint_labels: list,
-        semantic_taint_threshold: int,
+        semantic_taint_threshold: float,
 
         size_heuristic_aff_threshold: float,
         size_heuristic_small_threshold: int,
@@ -149,7 +149,7 @@ def __initialize(
         semantic_size_threshold: int,
         semantic_signal_ratio: float,
         semantic_taint_labels: list,
-        semantic_taint_threshold: int,
+        semantic_taint_threshold: float,
         size_heuristic_aff_threshold: float,
         size_heuristic_small_threshold: int,
         size_heuristic_large_threshold: int,
@@ -267,7 +267,7 @@ cdef extern from "frontend_agglomerate.h":
             uint64_t        semantic_size_threshold,
             float           semantic_signal_ratio,
             const vector[uint8_t]& semantic_taint_labels,
-            uint64_t        semantic_taint_threshold,
+            float           semantic_taint_threshold,
             float           size_heuristic_aff_threshold,
             uint64_t        size_heuristic_small_threshold,
             uint64_t        size_heuristic_large_threshold,

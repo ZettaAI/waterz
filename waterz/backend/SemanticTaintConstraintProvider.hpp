@@ -14,7 +14,8 @@ class SemanticTaintConstraintProvider : public ConstraintProvider {
 
 private:
     DefaultDict<SegType, size_t> _taint_counts{0};
-    uint64_t _threshold;
+    DefaultDict<SegType, size_t> _total_counts{0};
+    float _threshold;
 
 public:
     SemanticTaintConstraintProvider(
@@ -22,10 +23,11 @@ public:
         const SegType* seg_data,
         size_t num_voxels,
         const std::vector<SemValue>& taint_labels,
-        uint64_t threshold
+        float threshold
     ) : _threshold(threshold) {
         std::unordered_set<SemValue> taint_set(taint_labels.begin(), taint_labels.end());
         for (size_t i = 0; i < num_voxels; i++) {
+            _total_counts[seg_data[i]] += 1;
             if (taint_set.count(semantic_data[i])) {
                 _taint_counts[seg_data[i]] += 1;
             }
@@ -35,12 +37,16 @@ public:
     inline bool notifyNodeMerge(NodeIdType from, NodeIdType to) override {
         _taint_counts[to] += _taint_counts[from];
         _taint_counts.erase(from);
+        _total_counts[to] += _total_counts[from];
+        _total_counts.erase(from);
         return true;
     }
 
     inline bool isConstrained(NodeIdType from, NodeIdType to, float score) const override {
-        bool from_tainted = _taint_counts[from] > _threshold;
-        bool to_tainted = _taint_counts[to] > _threshold;
+        size_t total_from = _total_counts[from];
+        size_t total_to = _total_counts[to];
+        bool from_tainted = total_from > 0 && (float)_taint_counts[from] / total_from > _threshold;
+        bool to_tainted = total_to > 0 && (float)_taint_counts[to] / total_to > _threshold;
         // tainted segments can only merge with other tainted segments
         if (from_tainted != to_tainted)
             return true;

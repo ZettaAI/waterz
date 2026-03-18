@@ -110,7 +110,7 @@ initialize(
 		size_t          semantic_size_threshold,
 		AffValue        semantic_signal_ratio,
 		const std::vector<SemValue>& semantic_taint_labels,
-		size_t          semantic_taint_threshold,
+		AffValue        semantic_taint_threshold,
 		AffValue        size_heuristic_aff_threshold,
 		size_t          size_heuristic_small_threshold,
 		size_t          size_heuristic_large_threshold,

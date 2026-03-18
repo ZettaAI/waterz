@@ -32,7 +32,7 @@ def agglomerate(
         semantic_signal_ratio: float = 0.6,
 
         semantic_taint_labels: list[int] = [],
-        semantic_taint_threshold: int = 0,
+        semantic_taint_threshold: float = 0.0,
 
         size_heuristic_aff_threshold: float = 1.0,  # disabled
         size_heuristic_small_threshold: int = 1_000_000,
