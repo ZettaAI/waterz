@@ -32,7 +32,7 @@ public:
     inline bool notifyNodeMerge(NodeIdType from, NodeIdType to) override {
         _size[to] += _size[from];
         _size.erase(from);
-        return false;
+        return true;  // statistics changed
     }
 
     inline bool isConstrained(NodeIdType from, NodeIdType to, float score) const override {

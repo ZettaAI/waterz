@@ -272,9 +272,95 @@ public:
 
 	inline const std::vector<EdgeIdType>& incEdges(ID node) const { return _incEdges[node]; }
 
+	inline std::vector<EdgeIdType> takeIncEdges(ID node) {
+		std::vector<EdgeIdType> result;
+		result.swap(_incEdges[node]);
+		return result;
+	}
+
 	inline NodeIdType getOpposite(NodeIdType n, EdgeIdType e) const {
 
 		return (_edges[e].u == n ? _edges[e].v : _edges[e].u);
+	}
+
+	/**
+	 * Fast edge reassignment: move edge e from oldNode to newNode.
+	 * Caller must ensure one endpoint of e is oldNode.
+	 * Does NOT touch oldNode's incEdges (caller handles that).
+	 */
+	void reassignEdge(EdgeIdType e, NodeIdType oldNode, NodeIdType newNode) {
+
+		NodeIdType other = getOpposite(oldNode, e);
+
+		// Update adjacency maps
+		_adjMap[oldNode].erase(other);
+		_adjMap[other].erase(oldNode);
+		_adjMap[newNode][other] = e;
+		_adjMap[other][newNode] = e;
+
+		// Update edge endpoints
+		if (_edges[e].u == oldNode)
+			_edges[e].u = newNode;
+		else
+			_edges[e].v = oldNode == _edges[e].v ? newNode : _edges[e].v;
+
+		// Ensure u < v
+		if (_edges[e].u > _edges[e].v)
+			std::swap(_edges[e].u, _edges[e].v);
+
+		// Add to newNode's incident list (don't remove from oldNode - caller owns that)
+		_incEdges[newNode].push_back(e);
+	}
+
+	/**
+	 * Remove edge from graph but don't touch incEdges of the given skipNode.
+	 * Used when the caller already owns/cleared that node's incident list.
+	 */
+	void removeEdgeSkipNode(EdgeIdType e, NodeIdType skipNode) {
+
+		NodeIdType u = _edges[e].u;
+		NodeIdType v = _edges[e].v;
+		NodeIdType other = (u == skipNode) ? v : u;
+		removeIncEdge(other, e);
+		_adjMap[u].erase(v);
+		_adjMap[v].erase(u);
+	}
+
+	/**
+	 * Replace oldEdge (between survivor and neighbor) with newEdge
+	 * (being reassigned from oldNode to survivor). Fuses removeEdge +
+	 * reassignEdge to avoid redundant incEdge and adjMap operations.
+	 * Caller must have already taken oldNode's incEdges.
+	 */
+	void replaceEdge(EdgeIdType oldEdge, EdgeIdType newEdge,
+			NodeIdType survivor, NodeIdType neighbor, NodeIdType oldNode) {
+
+		// Remove oldEdge from survivor's and neighbor's incEdges
+		removeIncEdge(survivor, oldEdge);
+		removeIncEdge(neighbor, oldEdge);
+
+		// Remove newEdge from neighbor's incEdges (oldNode's already taken)
+		removeIncEdge(neighbor, newEdge);
+
+		// Update newEdge endpoints: oldNode -> survivor
+		if (_edges[newEdge].u == oldNode)
+			_edges[newEdge].u = survivor;
+		else
+			_edges[newEdge].v = survivor;
+		if (_edges[newEdge].u > _edges[newEdge].v)
+			std::swap(_edges[newEdge].u, _edges[newEdge].v);
+
+		// Add newEdge to survivor's and neighbor's incEdges
+		_incEdges[survivor].push_back(newEdge);
+		_incEdges[neighbor].push_back(newEdge);
+
+		// Update adjMaps: survivor↔neighbor now points to newEdge
+		_adjMap[survivor][neighbor] = newEdge;
+		_adjMap[neighbor][survivor] = newEdge;
+
+		// Clean up oldNode's adjMap entries
+		_adjMap[oldNode].erase(neighbor);
+		_adjMap[neighbor].erase(oldNode);
 	}
 
 	/**

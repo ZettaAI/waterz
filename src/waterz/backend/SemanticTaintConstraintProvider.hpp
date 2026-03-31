@@ -39,7 +39,7 @@ public:
         _taint_counts.erase(from);
         _total_counts[to] += _total_counts[from];
         _total_counts.erase(from);
-        return false;
+        return true;
     }
 
     inline bool isConstrained(NodeIdType from, NodeIdType to, float score) const override {

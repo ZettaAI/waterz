@@ -234,7 +234,10 @@ private:
 		}
 
 		// ...and update incident edges of b
-		std::vector<EdgeIdType> neighborEdges = _regionGraph.incEdges(b);
+		// Take b's incident list via swap to avoid copying the vector.
+		// b's list is cleared, so use reassignEdge/removeEdgeSkipNode
+		// which don't touch b's incEdges.
+		std::vector<EdgeIdType> neighborEdges = _regionGraph.takeIncEdges(b);
 		for (EdgeIdType neighborEdge : neighborEdges) {
 
 			if (neighborEdge == e)
@@ -253,8 +256,7 @@ private:
 
 				// We encountered an exclusive neighbor of b.
 
-				_regionGraph.moveEdge(neighborEdge, a, neighbor);
-				assert(_regionGraph.findEdge(a, neighbor) == neighborEdge);
+				_regionGraph.reassignEdge(neighborEdge, b, a);
 
 				if (nodeStatisticsChanged)
 					_stale[neighborEdge] = true;
@@ -267,32 +269,30 @@ private:
 				// * mark the cheaper one as stale (if it isn't already)
 				// * delete the more expensive one
 				//
-				// This ensures that the stale edge bubbles up early enough 
-				// to consider it's real score (which is assumed to be 
+				// This ensures that the stale edge bubbles up early enough
+				// to consider it's real score (which is assumed to be
 				// larger than the minium of the two original scores).
 
 				if (_edgeScores[neighborEdge] > _edgeScores[aNeighborEdge]) {
 
-					// We got lucky, we can reuse the edge that is attached to a 
+					// We got lucky, we can reuse the edge that is attached to a
 					// already
 
 					bool edgeStatisticChanged = statisticsProvider.notifyEdgeMerge(neighborEdge, aNeighborEdge);
 
-					_regionGraph.removeEdge(neighborEdge);
+					_regionGraph.removeEdgeSkipNode(neighborEdge, b);
 					_deleted[neighborEdge] = true;
 					if (edgeStatisticChanged)
 						_stale[aNeighborEdge] = true;
 
 				} else {
 
-					// Bummer. The new edge should be the one pointing from 
+					// Bummer. The new edge should be the one pointing from
 					// a to neighbor.
 
 					bool edgeStatisticChanged = statisticsProvider.notifyEdgeMerge(aNeighborEdge, neighborEdge);
 
-					_regionGraph.removeEdge(aNeighborEdge);
-					_regionGraph.moveEdge(neighborEdge, a, neighbor);
-					assert(_regionGraph.findEdge(a, neighbor) == neighborEdge);
+					_regionGraph.replaceEdge(aNeighborEdge, neighborEdge, a, neighbor, b);
 
 					if (edgeStatisticChanged)
 						_stale[neighborEdge] = true;
