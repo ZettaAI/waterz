@@ -1,6 +1,7 @@
 from libcpp.vector cimport vector
 from libc.stdint cimport uint64_t, uint32_t, uint8_t
 from libcpp cimport bool
+from libcpp.string cimport string
 
 import numpy as np
 cimport numpy as np
@@ -40,6 +41,9 @@ def agglomerate(
         semantic_aff_threshold: float,
         semantic_size_threshold: int,
         semantic_signal_ratio: float,
+
+        semantic_taint_labels: list,
+        semantic_taint_threshold: float,
 
         size_heuristic_aff_threshold: float,
         size_heuristic_small_threshold: int,
@@ -89,6 +93,8 @@ def agglomerate(
         semantic_aff_threshold=semantic_aff_threshold,
         semantic_size_threshold=semantic_size_threshold,
         semantic_signal_ratio=semantic_signal_ratio,
+        semantic_taint_labels=semantic_taint_labels,
+        semantic_taint_threshold=semantic_taint_threshold,
         size_heuristic_aff_threshold=size_heuristic_aff_threshold,
         size_heuristic_small_threshold=size_heuristic_small_threshold,
         size_heuristic_large_threshold=size_heuristic_large_threshold,
@@ -142,6 +148,8 @@ def __initialize(
         semantic_aff_threshold: float,
         semantic_size_threshold: int,
         semantic_signal_ratio: float,
+        semantic_taint_labels: list,
+        semantic_taint_threshold: float,
         size_heuristic_aff_threshold: float,
         size_heuristic_small_threshold: int,
         size_heuristic_large_threshold: int,
@@ -153,6 +161,9 @@ def __initialize(
     cdef uint32_t* gt_data = NULL
     cdef uint8_t* semantic_data = NULL
     cdef uint64_t* segconstraint_data = NULL
+    cdef vector[uint8_t] taint_labels_vec
+    for label in semantic_taint_labels:
+        taint_labels_vec.push_back(<uint8_t>label)
 
     aff_data = &affs[0,0,0,0]
     segmentation_data = &segmentation[0,0,0]
@@ -188,6 +199,9 @@ def __initialize(
         semantic_aff_threshold=semantic_aff_threshold,
         semantic_size_threshold=semantic_size_threshold,
         semantic_signal_ratio=semantic_signal_ratio,
+
+        semantic_taint_labels=taint_labels_vec,
+        semantic_taint_threshold=semantic_taint_threshold,
 
         size_heuristic_aff_threshold=size_heuristic_aff_threshold,
         size_heuristic_small_threshold=size_heuristic_small_threshold,
@@ -252,6 +266,8 @@ cdef extern from "frontend_agglomerate.h":
             float           semantic_aff_threshold,
             uint64_t        semantic_size_threshold,
             float           semantic_signal_ratio,
+            const vector[uint8_t]& semantic_taint_labels,
+            float           semantic_taint_threshold,
             float           size_heuristic_aff_threshold,
             uint64_t        size_heuristic_small_threshold,
             uint64_t        size_heuristic_large_threshold,
