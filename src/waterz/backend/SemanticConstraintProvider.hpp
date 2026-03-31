@@ -42,7 +42,7 @@ public:
             _semantic[to][k.first] += k.second;
         }
         _semantic.erase(from);
-        return true;
+        return false;
     }
 
     inline bool isConstrained(NodeIdType from, NodeIdType to, float score) const {

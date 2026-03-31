@@ -39,7 +39,7 @@ public:
             _constraint[to] = _constraint.at(from);
         }
         _constraint.erase(from);
-        return true;
+        return false;
     }
 
     inline bool isConstrained(NodeIdType from, NodeIdType to, float score) const {
