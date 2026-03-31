@@ -11,6 +11,7 @@
 #include "backend/region_graph.hpp"
 
 #include "backend/SemanticConstraintProvider.hpp"
+#include "backend/SemanticTaintConstraintProvider.hpp"
 #include "backend/SegConstraintProvider.hpp"
 #include "backend/SizeHeuristicConstraintProvider.hpp"
 
@@ -108,6 +109,8 @@ initialize(
 		AffValue        semantic_aff_threshold,
 		size_t          semantic_size_threshold,
 		AffValue        semantic_signal_ratio,
+		const std::vector<SemValue>& semantic_taint_labels,
+		AffValue        semantic_taint_threshold,
 		AffValue        size_heuristic_aff_threshold,
 		size_t          size_heuristic_small_threshold,
 		size_t          size_heuristic_large_threshold,
@@ -183,6 +186,17 @@ initialize(
 				semantic_aff_threshold,
 				semantic_size_threshold,
 				semantic_signal_ratio
+			)
+		);
+	}
+
+	if (semantic_data != NULL && !semantic_taint_labels.empty()) {
+		std::cout << "getting semantic taint constraint information..." << std::endl;
+		constraints->push_back(
+			new SemanticTaintConstraintProvider<RegionGraphType, SemValue, SegID>(
+				semantic_data, segmentation_data, num_voxels,
+				semantic_taint_labels,
+				semantic_taint_threshold
 			)
 		);
 	}
