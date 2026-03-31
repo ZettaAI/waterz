@@ -1,6 +1,7 @@
 from libcpp.vector cimport vector
-from libc.stdint cimport uint64_t, uint32_t
+from libc.stdint cimport uint64_t, uint32_t, uint8_t
 from libcpp cimport bool
+
 import numpy as np
 cimport numpy as np
 
@@ -8,7 +9,7 @@ def agglomerate_rag(
         rag,
         rag_metadata,
         thresholds,
-        fragments=None,
+        fragments,
         ):
 
     if fragments is not None and not fragments.flags['C_CONTIGUOUS']:
@@ -26,16 +27,28 @@ def agglomerate_rag(
 
 
 def agglomerate(
-        affs,
-        thresholds,
-        gt=None,
-        fragments=None,
-        aff_threshold_low=0.0001,
-        aff_threshold_high=0.9999,
-        return_merge_history=False,
-        return_region_graph=False,
-        return_region_graph_metadata=False,
-        ):
+        affs: np.array | None,
+        thresholds: np.array | None,
+        gt: np.array | None,
+        fragments: np.array | None,
+        semantic: np.array | None,
+        segconstraint: np.array | None,
+
+        aff_threshold_low: float,
+        aff_threshold_high: float,
+
+        semantic_aff_threshold: float,
+        semantic_size_threshold: int,
+        semantic_signal_ratio: float,
+
+        size_heuristic_aff_threshold: float,
+        size_heuristic_small_threshold: int,
+        size_heuristic_large_threshold: int,
+
+        return_merge_history: bool,
+        return_region_graph: bool,
+        return_region_graph_metadata: bool,
+    ):
 
     # the C++ part assumes contiguous memory, make sure we have it (and do 
     # nothing, if we do)
@@ -48,6 +61,12 @@ def agglomerate(
     if fragments is not None and not fragments.flags['C_CONTIGUOUS']:
         print("Creating memory-contiguous fragments arrray (avoid this by passing C_CONTIGUOUS arrays)")
         fragments = np.ascontiguousarray(fragments)
+    if semantic is not None and not semantic.flags['C_CONTIGUOUS']:
+        print("Creating memory-contiguous semantic arrray (avoid this by passing C_CONTIGUOUS arrays)")
+        semantic = np.ascontiguousarray(semantic)
+    if segconstraint is not None and not segconstraint.flags['C_CONTIGUOUS']:
+        print("Creating memory-contiguous segconstraint arrray (avoid this by passing C_CONTIGUOUS arrays)")
+        segconstraint = np.ascontiguousarray(segconstraint)
 
     print("Preparing segmentation volume...")
 
@@ -59,7 +78,22 @@ def agglomerate(
         segmentation = fragments
         find_fragments = False
 
-    cdef WaterzState state = __initialize(affs, segmentation, gt, aff_threshold_low, aff_threshold_high, find_fragments)
+    cdef WaterzState state = __initialize(
+        affs=affs,
+        segmentation=segmentation,
+        gt=gt,
+        semantic=semantic,
+        segconstraint=segconstraint,
+        aff_threshold_low=aff_threshold_low,
+        aff_threshold_high=aff_threshold_high,
+        semantic_aff_threshold=semantic_aff_threshold,
+        semantic_size_threshold=semantic_size_threshold,
+        semantic_signal_ratio=semantic_signal_ratio,
+        size_heuristic_aff_threshold=size_heuristic_aff_threshold,
+        size_heuristic_small_threshold=size_heuristic_small_threshold,
+        size_heuristic_large_threshold=size_heuristic_large_threshold,
+        find_fragments=find_fragments,
+        )
 
     thresholds.sort()
     for threshold in thresholds:
@@ -99,29 +133,68 @@ def agglomerate(
 
 def __initialize(
         np.ndarray[np.float32_t, ndim=4] affs,
-        np.ndarray[uint64_t, ndim=3]     segmentation,
-        np.ndarray[uint32_t, ndim=3]     gt = None,
-        aff_threshold_low  = 0.0001,
-        aff_threshold_high = 0.9999,
-        find_fragments = True):
+        np.ndarray[uint64_t, ndim=3] segmentation,
+        np.ndarray[uint32_t, ndim=3] gt,
+        np.ndarray[uint8_t, ndim=3] semantic,
+        np.ndarray[uint64_t, ndim=3] segconstraint,
+        aff_threshold_low: float,
+        aff_threshold_high: float,
+        semantic_aff_threshold: float,
+        semantic_size_threshold: int,
+        semantic_signal_ratio: float,
+        size_heuristic_aff_threshold: float,
+        size_heuristic_small_threshold: int,
+        size_heuristic_large_threshold: int,
+        find_fragments: bool,
+    ):
 
     cdef float*    aff_data
     cdef uint64_t* segmentation_data
     cdef uint32_t* gt_data = NULL
+    cdef uint8_t* semantic_data = NULL
+    cdef uint64_t* segconstraint_data = NULL
 
     aff_data = &affs[0,0,0,0]
     segmentation_data = &segmentation[0,0,0]
     if gt is not None:
         gt_data = &gt[0,0,0]
+    if semantic is not None:
+        semantic_data = &semantic[0,0,0]
+    if segconstraint is not None:
+        segconstraint_data = &segconstraint[0,0,0]
+
+    # return initialize(
+    #     affs.shape[1], affs.shape[2], affs.shape[3],
+    #     aff_data,
+    #     segmentation_data,
+    #     gt_data,
+    #     aff_threshold_low,
+    #     aff_threshold_high,
+    #     find_fragments
 
     return initialize(
-        affs.shape[1], affs.shape[2], affs.shape[3],
-        aff_data,
-        segmentation_data,
-        gt_data,
-        aff_threshold_low,
-        aff_threshold_high,
-        find_fragments)
+        width=affs.shape[1],
+        height=affs.shape[2],
+        depth=affs.shape[3],
+        affinity_data=aff_data,
+        segmentation_data=segmentation_data,
+        groundtruth_data=gt_data,
+        semantic_data=semantic_data,
+        segconstraint_data=segconstraint_data,
+
+        affThresholdLow=aff_threshold_low,
+        affThresholdHigh=aff_threshold_high,
+
+        semantic_aff_threshold=semantic_aff_threshold,
+        semantic_size_threshold=semantic_size_threshold,
+        semantic_signal_ratio=semantic_signal_ratio,
+
+        size_heuristic_aff_threshold=size_heuristic_aff_threshold,
+        size_heuristic_small_threshold=size_heuristic_small_threshold,
+        size_heuristic_large_threshold=size_heuristic_large_threshold,
+
+        findFragments=find_fragments,
+    )
 
 def __initialize_with_rag(
         rag,
@@ -172,8 +245,16 @@ cdef extern from "frontend_agglomerate.h":
             const float*    affinity_data,
             uint64_t*       segmentation_data,
             const uint32_t* groundtruth_data,
+            const uint8_t*  semantic_data,
+            const uint64_t* segconstraint_data,
             float           affThresholdLow,
             float           affThresholdHigh,
+            float           semantic_aff_threshold,
+            uint64_t        semantic_size_threshold,
+            float           semantic_signal_ratio,
+            float           size_heuristic_aff_threshold,
+            uint64_t        size_heuristic_small_threshold,
+            uint64_t        size_heuristic_large_threshold,
             bool            findFragments);
 
     WaterzState initialize_with_rag(
