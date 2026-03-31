@@ -170,18 +170,36 @@ def agglomerate(
         (tmp_path / "Queue.h").write_text(queue_src)
 
         # compile module
+        _include_dirs = [
+            str(HERE),
+            tmpdir,
+            str(HERE / "backend"),
+            np.get_include(),
+            "/opt/homebrew/include",
+        ]
+        _compile_args = ["-std=c++11", "-w"]
+
+        def _build_frontend(cache_dir: Path) -> list[str]:
+            import subprocess
+
+            obj_path = cache_dir / "frontend_agglomerate.o"
+            cpp_path = HERE / "frontend_agglomerate.cpp"
+            if not obj_path.exists() or obj_path.stat().st_mtime < cpp_path.stat().st_mtime:
+                cmd = [
+                    "c++", *_compile_args,
+                    *[f"-I{d}" for d in _include_dirs],
+                    "-fPIC", "-c", str(cpp_path), "-o", str(obj_path),
+                ]
+                subprocess.check_call(cmd)
+            return [str(obj_path)]
+
         module = witty.compile_cython(
             (HERE / "agglomerate.pyx").read_text(),
             source_files=[str(HERE / "frontend_agglomerate.cpp")],
+            build_extra_objects=_build_frontend,
             extra_link_args=["-std=c++11"],
-            extra_compile_args=["-std=c++11", "-w"],
-            include_dirs=[
-                str(HERE),
-                tmpdir,
-                str(HERE / "backend"),
-                np.get_include(),
-                "/opt/homebrew/include",
-            ],
+            extra_compile_args=_compile_args,
+            include_dirs=_include_dirs,
             language="c++",
             quiet=True,
             force_rebuild=force_rebuild,
