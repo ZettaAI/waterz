@@ -155,57 +155,60 @@ def agglomerate(
             affs, range(100,10000,100), gt, return_merge_history = True):
             # ...
     """
-    import witty
+    _DEFAULT_SCORING = "OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>"
+    _use_precompiled = (scoring_function == _DEFAULT_SCORING and discretize_queue == 0)
 
-    with TemporaryDirectory() as tmpdir:
-        # supply #include <ScoringFunction.h> in frontend_agglomerate.h
-        tmp_path = Path(tmpdir)
-        scoredef = f"typedef {scoring_function} ScoringFunctionType;"
-        (tmp_path / "ScoringFunction.h").write_text(scoredef)
+    if _use_precompiled:
+        from waterz import _agglomerate_default as module
+    else:
+        import witty
 
-        # supply #include <Queue.h> in frontend_agglomerate.h
-        queue_src = "template<typename T, typename S> using QueueType = " + (
-            "PriorityQueue<T, S>;"
-            if discretize_queue == 0
-            else f"BinQueue<T, S, {discretize_queue}>;"
-        )
-        (tmp_path / "Queue.h").write_text(queue_src)
+        with TemporaryDirectory() as tmpdir:
+            tmp_path = Path(tmpdir)
+            scoredef = f"typedef {scoring_function} ScoringFunctionType;"
+            (tmp_path / "ScoringFunction.h").write_text(scoredef)
 
-        # compile module
-        _include_dirs = [
-            str(HERE),
-            tmpdir,
-            str(HERE / "backend"),
-            np.get_include(),
-            "/opt/homebrew/include",
-        ]
-        _compile_args = ["-std=c++11", "-w"]
+            queue_src = "template<typename T, typename S> using QueueType = " + (
+                "PriorityQueue<T, S>;"
+                if discretize_queue == 0
+                else f"BinQueue<T, S, {discretize_queue}>;"
+            )
+            (tmp_path / "Queue.h").write_text(queue_src)
 
-        def _build_frontend(cache_dir: Path) -> list[str]:
-            import subprocess
+            _include_dirs = [
+                str(HERE),
+                tmpdir,
+                str(HERE / "backend"),
+                np.get_include(),
+                "/opt/homebrew/include",
+            ]
+            _compile_args = ["-std=c++11", "-w"]
 
-            obj_path = cache_dir / "frontend_agglomerate.o"
-            cpp_path = HERE / "frontend_agglomerate.cpp"
-            if not obj_path.exists() or obj_path.stat().st_mtime < cpp_path.stat().st_mtime:
-                cmd = [
-                    "c++", *_compile_args,
-                    *[f"-I{d}" for d in _include_dirs],
-                    "-fPIC", "-c", str(cpp_path), "-o", str(obj_path),
-                ]
-                subprocess.check_call(cmd)
-            return [str(obj_path)]
+            def _build_frontend(cache_dir: Path) -> list[str]:
+                import subprocess
 
-        module = witty.compile_cython(
-            (HERE / "agglomerate.pyx").read_text(),
-            source_files=[str(HERE / "frontend_agglomerate.cpp")],
-            build_extra_objects=_build_frontend,
-            extra_link_args=["-std=c++11"],
-            extra_compile_args=_compile_args,
-            include_dirs=_include_dirs,
-            language="c++",
-            quiet=True,
-            force_rebuild=force_rebuild,
-        )
+                obj_path = cache_dir / "frontend_agglomerate.o"
+                cpp_path = HERE / "frontend_agglomerate.cpp"
+                if not obj_path.exists() or obj_path.stat().st_mtime < cpp_path.stat().st_mtime:
+                    cmd = [
+                        "c++", *_compile_args,
+                        *[f"-I{d}" for d in _include_dirs],
+                        "-fPIC", "-c", str(cpp_path), "-o", str(obj_path),
+                    ]
+                    subprocess.check_call(cmd)
+                return [str(obj_path)]
+
+            module = witty.compile_cython(
+                (HERE / "agglomerate.pyx").read_text(),
+                source_files=[str(HERE / "frontend_agglomerate.cpp")],
+                build_extra_objects=_build_frontend,
+                extra_link_args=["-std=c++11"],
+                extra_compile_args=_compile_args,
+                include_dirs=_include_dirs,
+                language="c++",
+                quiet=True,
+                force_rebuild=force_rebuild,
+            )
 
     # call compiled function
     if input_rag is not None or input_rag_metadata is not None:
