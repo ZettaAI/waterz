@@ -30,10 +30,9 @@ initialize_with_rag(
 		std::size_t     height,
 		std::size_t     depth) {
 
-	std::size_t maxId = 0;
+	SegID maxId = 0;
 	for (const auto& edge : rag) {
-		auto max_uv = std::max(edge.u, edge.v);
-		maxId = std::max(max_uv, maxId);
+		maxId = std::max(std::max(edge.u, edge.v), maxId);
 	}
 
 	std::size_t numNodes = maxId + 1;
