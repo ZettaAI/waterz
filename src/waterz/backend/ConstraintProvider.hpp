@@ -1,6 +1,8 @@
 #ifndef WATERZ_CONSTRAINT_PROVIDER_H__
 #define WATERZ_CONSTRAINT_PROVIDER_H__
 
+#include <cstdint>
+
 /**
  * Base class for statistics providers with fallback implementations.
  */

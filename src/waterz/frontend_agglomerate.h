@@ -1,6 +1,7 @@
 #ifndef C_FRONTEND_H
 #define C_FRONTEND_H
 
+#include <cstdint>
 #include <vector>
 
 #include "backend/IterativeRegionMerging.hpp"
