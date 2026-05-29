@@ -1,6 +1,7 @@
 #include "ConstraintProvider.hpp"
 #include "DefaultDict.hpp"
 
+#include <cstdint>
 #include <unordered_map>
 
 template <typename RegionGraphType, typename SemValue, typename SegType>

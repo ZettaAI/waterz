@@ -1,6 +1,7 @@
 #ifndef WATERZ_DEFAULTDICT_H__
 #define WATERZ_DEFAULTDICT_H__
 
+#include <cstdint>
 #include <unordered_map>
 
 template<typename T>
