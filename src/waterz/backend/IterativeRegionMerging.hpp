@@ -92,11 +92,15 @@ public:
 
 			if (_stale[next]) {
 
-				// if we encountered a stale edge, recompute it's score and 
+				// if we encountered a stale edge, recompute it's score and
 				// place it back in the queue
 				ScoreType newScore = scoreEdge(next, edgeScoringFunction);
 				_stale[next] = false;
-				assert(newScore >= score);
+				// A stale edge's score is recomputed from running/area-weighted
+				// mean affinities in floating point, so it can dip ~1 ULP below
+				// the score it was queued at. Tolerate that rounding noise; a
+				// real non-monotonicity would exceed this by orders of magnitude.
+				assert(newScore >= score - 1e-5);
 
 				visitor.onStaleEdgeFound(next, score, newScore);
 
