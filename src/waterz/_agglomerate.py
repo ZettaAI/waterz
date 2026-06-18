@@ -156,10 +156,21 @@ def agglomerate(
             # ...
     """
     _DEFAULT_SCORING = "OneMinus<MeanAffinity<RegionGraphType, ScoreValue>>"
-    _use_precompiled = (scoring_function == _DEFAULT_SCORING and discretize_queue == 0)
+    # Pre-compiled (shipped) modules keyed by discretize_queue, for the default
+    # mean scoring. Importing a ready .so avoids runtime JIT (witty) compilation
+    # -- and the concurrent-compile cache races that can corrupt it on workers.
+    # Other discretize_queue values / scoring functions fall back to JIT below.
+    _PRECOMPILED_BY_QUEUE = {0: "_agglomerate_default", 256: "_agglomerate_mean_bin256"}
+    _precompiled_name = (
+        _PRECOMPILED_BY_QUEUE.get(discretize_queue)
+        if scoring_function == _DEFAULT_SCORING
+        else None
+    )
 
-    if _use_precompiled:
-        from waterz import _agglomerate_default as module
+    if _precompiled_name is not None:
+        import importlib
+
+        module = importlib.import_module(f"waterz.{_precompiled_name}")
     else:
         import witty
 
