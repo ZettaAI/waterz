@@ -193,7 +193,7 @@ def agglomerate(
                 np.get_include(),
                 "/opt/homebrew/include",
             ]
-            _compile_args = ["-std=c++11", "-w"]
+            _compile_args = ["-std=c++17", "-w"]
 
             def _build_frontend(cache_dir: Path) -> list[str]:
                 import subprocess
@@ -213,7 +213,7 @@ def agglomerate(
                 (HERE / "agglomerate.pyx").read_text(),
                 source_files=[str(HERE / "frontend_agglomerate.cpp")],
                 build_extra_objects=_build_frontend,
-                extra_link_args=["-std=c++11"],
+                extra_link_args=["-std=c++17"],
                 extra_compile_args=_compile_args,
                 include_dirs=_include_dirs,
                 language="c++",

@@ -22,8 +22,8 @@ evaluate = Extension(
     ],
     include_dirs=include_dirs,
     language="c++",
-    extra_link_args=["-std=c++11"],
-    extra_compile_args=["-std=c++11", "-w"],
+    extra_link_args=["-std=c++17"],
+    extra_compile_args=["-std=c++17", "-w"],
 )
 
 # Pre-compile the agglomeration modules for the (scoring, queue) combinations
@@ -54,8 +54,8 @@ def _agglomerate_ext(module_name, queue_decl):
         sources=[str(pyx_path), "src/waterz/frontend_agglomerate.cpp"],
         include_dirs=include_dirs + [str(headers)],
         language="c++",
-        extra_link_args=["-std=c++11"],
-        extra_compile_args=["-std=c++11", "-w", "-O3"],
+        extra_link_args=["-std=c++17"],
+        extra_compile_args=["-std=c++17", "-w", "-O3"],
     )
 
 

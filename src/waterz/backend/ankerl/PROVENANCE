@@ -1,0 +1,6 @@
+ankerl::unordered_dense v4.8.1
+source: https://github.com/martinus/unordered_dense (tag v4.8.1)
+files:  include/ankerl/{unordered_dense.h, stl.h} (vendored verbatim; unordered_dense.h includes stl.h)
+license: MIT (© 2022 Martin Leitner-Ankerl)
+
+Update by re-copying a newer tagged release into this directory in its own commit.

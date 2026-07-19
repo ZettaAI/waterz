@@ -6,6 +6,9 @@
 #include <unordered_map>
 #include <limits>
 #include <cassert>
+#include <cstdint>
+#include <stdexcept>
+#include "ankerl/unordered_dense.h"
 
 template <typename ID>
 struct RegionGraphEdge {
@@ -165,8 +168,14 @@ public:
 
 	RegionGraph(ID numNodes = 0) :
 		_numNodes(numNodes),
-		_incEdges(numNodes),
-		_adjMap(numNodes) {}
+		_incEdges(numNodes) {
+
+		// edgeKey packs a node pair as (min<<32)|max, so node ids must fit in 32
+		// bits. A single chunk has far fewer than 2^32 supervoxels; fail loudly
+		// rather than silently colliding if that ever stops holding.
+		if (static_cast<std::uint64_t>(numNodes) > (static_cast<std::uint64_t>(1) << 32))
+			throw std::length_error("RegionGraph: node id space exceeds 2^32 (edgeKey packing)");
+	}
 
 	ID numNodes() const { return _numNodes; }
 
@@ -177,7 +186,6 @@ public:
 		NodeIdType id = _numNodes;
 		_numNodes++;
 		_incEdges.emplace_back();
-		_adjMap.emplace_back();
 
 		for (RegionGraphNodeMapBase<ID>* map : _nodeMaps)
 			map->onNewNode(id);
@@ -192,8 +200,7 @@ public:
 
 		_incEdges[u].push_back(id);
 		_incEdges[v].push_back(id);
-		_adjMap[u][v] = id;
-		_adjMap[v][u] = id;
+		_edgeMap[edgeKey(u, v)] = id;
 
 		for (RegionGraphEdgeMapBase<ID>* map : _edgeMaps)
 			map->onNewEdge(id);
@@ -207,8 +214,7 @@ public:
 		NodeIdType v = _edges[e].v;
 		removeIncEdge(u, e);
 		removeIncEdge(v, e);
-		_adjMap[u].erase(v);
-		_adjMap[v].erase(u);
+		_edgeMap.erase(edgeKey(u, v));
 	}
 
 	void moveEdge(EdgeIdType e, NodeIdType u, NodeIdType v) {
@@ -292,11 +298,8 @@ public:
 
 		NodeIdType other = getOpposite(oldNode, e);
 
-		// Update adjacency maps
-		_adjMap[oldNode].erase(other);
-		_adjMap[other].erase(oldNode);
-		_adjMap[newNode][other] = e;
-		_adjMap[other][newNode] = e;
+		_edgeMap.erase(edgeKey(oldNode, other));
+		_edgeMap[edgeKey(newNode, other)] = e;
 
 		// Update edge endpoints
 		if (_edges[e].u == oldNode)
@@ -318,12 +321,11 @@ public:
 	 */
 	void removeEdgeSkipNode(EdgeIdType e, NodeIdType skipNode) {
 
+		// The caller marks this edge deleted; under lazy incidence removal it stays
+		// in the other endpoint's list and is skipped when that list is processed.
 		NodeIdType u = _edges[e].u;
 		NodeIdType v = _edges[e].v;
-		NodeIdType other = (u == skipNode) ? v : u;
-		removeIncEdge(other, e);
-		_adjMap[u].erase(v);
-		_adjMap[v].erase(u);
+		_edgeMap.erase(edgeKey(u, v));
 	}
 
 	/**
@@ -335,12 +337,10 @@ public:
 	void replaceEdge(EdgeIdType oldEdge, EdgeIdType newEdge,
 			NodeIdType survivor, NodeIdType neighbor, NodeIdType oldNode) {
 
-		// Remove oldEdge from survivor's and neighbor's incEdges
-		removeIncEdge(survivor, oldEdge);
-		removeIncEdge(neighbor, oldEdge);
-
-		// Remove newEdge from neighbor's incEdges (oldNode's already taken)
-		removeIncEdge(neighbor, newEdge);
+		// oldEdge is marked deleted by the caller; under lazy incidence removal it
+		// stays in survivor's/neighbor's lists and is skipped on iteration. newEdge
+		// keeps neighbor as an endpoint (already in neighbor's list); only its new
+		// endpoint survivor needs a push.
 
 		// Update newEdge endpoints: oldNode -> survivor
 		if (_edges[newEdge].u == oldNode)
@@ -350,17 +350,10 @@ public:
 		if (_edges[newEdge].u > _edges[newEdge].v)
 			std::swap(_edges[newEdge].u, _edges[newEdge].v);
 
-		// Add newEdge to survivor's and neighbor's incEdges
 		_incEdges[survivor].push_back(newEdge);
-		_incEdges[neighbor].push_back(newEdge);
 
-		// Update adjMaps: survivor↔neighbor now points to newEdge
-		_adjMap[survivor][neighbor] = newEdge;
-		_adjMap[neighbor][survivor] = newEdge;
-
-		// Clean up oldNode's adjMap entries
-		_adjMap[oldNode].erase(neighbor);
-		_adjMap[neighbor].erase(oldNode);
+		_edgeMap.erase(edgeKey(oldNode, neighbor));
+		_edgeMap[edgeKey(survivor, neighbor)] = newEdge;
 	}
 
 	/**
@@ -368,10 +361,8 @@ public:
 	 */
 	inline EdgeIdType findEdge(NodeIdType u, NodeIdType v) {
 
-		auto it = _adjMap[u].find(v);
-		if (it != _adjMap[u].end())
-			return it->second;
-		return NoEdge;
+		auto it = _edgeMap.find(edgeKey(u, v));
+		return it != _edgeMap.end() ? it->second : NoEdge;
 	}
 
 private:
@@ -408,11 +399,9 @@ private:
 		NodeIdType oldV = _edges[e].v;
 		NodeIdType otherNode = _edges[e].u;
 		removeIncEdge(oldV, e);
-		_adjMap[oldV].erase(otherNode);
-		_adjMap[otherNode].erase(oldV);
 		_incEdges[v].push_back(e);
-		_adjMap[v][otherNode] = e;
-		_adjMap[otherNode][v] = e;
+		_edgeMap.erase(edgeKey(oldV, otherNode));
+		_edgeMap[edgeKey(v, otherNode)] = e;
 		_edges[e].v = v;
 	}
 
@@ -421,12 +410,19 @@ private:
 		NodeIdType oldU = _edges[e].u;
 		NodeIdType otherNode = _edges[e].v;
 		removeIncEdge(oldU, e);
-		_adjMap[oldU].erase(otherNode);
-		_adjMap[otherNode].erase(oldU);
 		_incEdges[u].push_back(e);
-		_adjMap[u][otherNode] = e;
-		_adjMap[otherNode][u] = e;
+		_edgeMap.erase(edgeKey(oldU, otherNode));
+		_edgeMap[edgeKey(u, otherNode)] = e;
 		_edges[e].u = u;
+	}
+
+	// Pack an unordered node pair into one 64-bit key. Node ids are the compact
+	// relabeled range [0, numNodes) and a chunk holds far fewer than 2^32
+	// supervoxels, so (min<<32)|max is a lossless, canonical per-pair key.
+	static inline uint64_t edgeKey(NodeIdType a, NodeIdType b) {
+		uint64_t lo = static_cast<uint64_t>(std::min(a, b));
+		uint64_t hi = static_cast<uint64_t>(std::max(a, b));
+		return (lo << 32) | hi;
 	}
 
 	inline void removeIncEdge(NodeIdType n, EdgeIdType e) {
@@ -444,8 +440,10 @@ private:
 
 	std::vector<std::vector<EdgeIdType>> _incEdges;
 
-	// per-node adjacency map: neighbor -> edge id (O(1) findEdge)
-	std::vector<std::unordered_map<NodeIdType, EdgeIdType>> _adjMap;
+	// Global adjacency: packed node pair -> edge id, for O(1) findEdge. Flat
+	// (open-addressing) map -- cache-friendly and ~half the footprint of
+	// std::unordered_map at the 100M+ edges of a production chunk.
+	ankerl::unordered_dense::map<uint64_t, EdgeIdType> _edgeMap;
 
 	std::vector<RegionGraphNodeMapBase<ID>*> _nodeMaps;
 	std::vector<RegionGraphEdgeMapBase<ID>*> _edgeMaps;

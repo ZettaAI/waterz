@@ -8,6 +8,8 @@
 #include <queue>
 #include <cassert>
 #include <limits>
+#include <algorithm>
+#include <cstdint>
 
 #include "RegionGraph.hpp"
 #include "PriorityQueue.hpp"
@@ -30,7 +32,15 @@ public:
 		_edgeScores(initialRegionGraph),
 		_deleted(initialRegionGraph),
 		_stale(initialRegionGraph),
-		_mergedUntil(std::numeric_limits<ScoreType>::lowest()) {}
+		_edgeScoredAt(initialRegionGraph),
+		_nodeStamp(initialRegionGraph.numNodes(), 0),
+		_globalGen(0),
+		_rootPaths(initialRegionGraph.numNodes()),
+		_mergedUntil(std::numeric_limits<ScoreType>::lowest()) {
+
+		for (std::size_t i = 0; i < _rootPaths.size(); i++)
+			_rootPaths[i] = static_cast<NodeIdType>(i);
+	}
 
 	/**
 	 * Merge a RAG with the given edge scoring function until the given threshold.
@@ -90,7 +100,10 @@ public:
 				continue;
 			}
 
-			if (_stale[next]) {
+			NodeIdType su = _regionGraph.edge(next).u;
+			NodeIdType sv = _regionGraph.edge(next).v;
+			if (_stale[next] ||
+			    _edgeScoredAt[next] < std::max(_nodeStamp[su], _nodeStamp[sv])) {
 
 				// if we encountered a stale edge, recompute it's score and
 				// place it back in the queue
@@ -163,7 +176,9 @@ public:
 				continue;
 
 			ScoreType score;
-			if (_stale[e])
+			NodeIdType eu = _regionGraph.edge(e).u;
+			NodeIdType ev = _regionGraph.edge(e).v;
+			if (_stale[e] || _edgeScoredAt[e] < std::max(_nodeStamp[eu], _nodeStamp[ev]))
 				score = scoreEdge(e, edgeScoringFunction);
 			else
 				score = _edgeScores[e];
@@ -192,7 +207,9 @@ public:
 				continue;
 
 			ScoreType score;
-			if (_stale[e])
+			NodeIdType eu = _regionGraph.edge(e).u;
+			NodeIdType ev = _regionGraph.edge(e).v;
+			if (_stale[e] || _edgeScoredAt[e] < std::max(_nodeStamp[eu], _nodeStamp[ev]))
 				score = scoreEdge(e, edgeScoringFunction);
 			else
 				score = _edgeScores[e];
@@ -232,9 +249,12 @@ private:
 
 		if (nodeStatisticsChanged) {
 
-			// mark all incident edges of a as stale...
-			for (EdgeIdType neighborEdge : _regionGraph.incEdges(a))
-				_stale[neighborEdge] = true;
+			// a's statistics changed, so every edge incident to a -- and every edge
+			// about to be reassigned onto a below -- must be re-scored before it can
+			// merge. Bump the clock and stamp a instead of sweeping a's incident list;
+			// each such edge then reads as stale at pop-time via the generation check.
+			_globalGen++;
+			_nodeStamp[a] = _globalGen;
 		}
 
 		// ...and update incident edges of b
@@ -245,6 +265,12 @@ private:
 		for (EdgeIdType neighborEdge : neighborEdges) {
 
 			if (neighborEdge == e)
+				continue;
+
+			// Under lazy incidence removal, b's taken list can hold edges deleted in
+			// earlier merges. Skip them here -- a deleted edge may no longer have b
+			// as an endpoint, so getOpposite below would be meaningless.
+			if (_deleted[neighborEdge])
 				continue;
 
 			NodeIdType neighbor = _regionGraph.getOpposite(b, neighborEdge);
@@ -261,9 +287,6 @@ private:
 				// We encountered an exclusive neighbor of b.
 
 				_regionGraph.reassignEdge(neighborEdge, b, a);
-
-				if (nodeStatisticsChanged)
-					_stale[neighborEdge] = true;
 
 			} else {
 
@@ -318,6 +341,7 @@ private:
 		ScoreType score = edgeScoringFunction(e);
 
 		_edgeScores[e] = score;
+		_edgeScoredAt[e] = _globalGen;
 		_edgeQueue.push(e, score);
 
 		return score;
@@ -325,8 +349,8 @@ private:
 
 	inline bool isRoot(NodeIdType id) {
 
-		// if there is no root path, it is a root
-		return (_rootPaths.count(id) == 0);
+		// a root points to itself
+		return _rootPaths[id] == id;
 	}
 
 	/**
@@ -340,15 +364,15 @@ private:
 
 		// walk up to root
 
-		NodeIdType root = _rootPaths.at(id);
+		NodeIdType root = _rootPaths[id];
 		while (!isRoot(root))
-			root = _rootPaths.at(root);
+			root = _rootPaths[root];
 
 		// not compressed, yet
-		if (_rootPaths.at(id) != root)
+		if (_rootPaths[id] != root)
 			while (id != root) {
 
-				NodeIdType next = _rootPaths.at(id);
+				NodeIdType next = _rootPaths[id];
 				_rootPaths[id] = root;
 				id = next;
 			}
@@ -364,15 +388,21 @@ private:
 	typename RegionGraphType::template EdgeMap<bool> _stale;
 	typename RegionGraphType::template EdgeMap<bool> _deleted;
 
+	// Generation clock for O(1) staleness. An edge is stale iff it was last scored
+	// before the latest stamp on either of its (current) endpoints. A stats-changing
+	// merge bumps _globalGen and stamps the survivor, so every incident edge reads
+	// as stale at pop-time without the O(degree) per-merge sweep it replaces.
+	typename RegionGraphType::template EdgeMap<uint64_t> _edgeScoredAt;
+	std::vector<uint64_t> _nodeStamp;
+	uint64_t _globalGen;
+
 	// sorted list of edges indices, cheapest edge first
 	QueueType<EdgeIdType, ScoreType> _edgeQueue;
 
-	// paths from nodes to the roots of the merge-tree they are part of
-	//
-	// root nodes are not in the map
-	//
-	// paths will be compressed when read
-	std::unordered_map<NodeIdType, NodeIdType> _rootPaths;
+	// union-find parent array: each node points to its parent in the merge-tree;
+	// a root points to itself. Dense (ids are [0,numNodes)) so a growing merge pays
+	// no hashmap rehash. Path-compressed on read.
+	std::vector<NodeIdType> _rootPaths;
 
 	// current state of merging
 	ScoreType _mergedUntil;
