@@ -13,14 +13,17 @@
 #include "backend/HistogramQuantileProvider.hpp"
 #include "backend/VectorQuantileProvider.hpp"
 #include "backend/ConstraintProvider.hpp"
+#include "backend/SemanticTaintConstraintProvider.hpp"
 #include "evaluate.hpp"
 
-
-typedef uint64_t SegID;
 typedef uint32_t GtID;
 typedef uint8_t SemValue;
-typedef float AffValue;
-typedef float ScoreValue;
+
+// AffValue, ScoreValue, SegID are defined in the JIT-generated headers below.
+// For the pre-compiled default module, these are float/float/uint64_t.
+#include <SegType.h>
+#include <AffType.h>
+
 typedef RegionGraph<SegID> RegionGraphType;
 
 // to be created by __init__.py
@@ -58,6 +61,20 @@ struct ScoredEdge {
 	SegID u;
 	SegID v;
 	ScoreValue score;
+};
+
+struct RichScoredEdge {
+
+	RichScoredEdge(SegID u_, SegID v_, ScoreValue score_, uint64_t contact_area_) :
+		u(u_),
+		v(v_),
+		score(score_),
+		contact_area(contact_area_) {}
+
+	SegID u;
+	SegID v;
+	ScoreValue score;
+	uint64_t contact_area;
 };
 
 struct WaterzState {
@@ -184,6 +201,20 @@ std::vector<Merge> mergeUntil(
 
 std::vector<ScoredEdge> getRegionGraph(WaterzState& state);
 std::vector<double> getRegionGraphMeta(WaterzState& state);
+
+std::vector<ScoredEdge> buildRegionGraphOnly(
+		std::size_t     width,
+		std::size_t     height,
+		std::size_t     depth,
+		const AffValue* affinity_data,
+		SegID*          segmentation_data);
+
+std::vector<RichScoredEdge> buildRegionGraphRich(
+		std::size_t     width,
+		std::size_t     height,
+		std::size_t     depth,
+		const AffValue* affinity_data,
+		SegID*          segmentation_data);
 
 void free(WaterzState& state);
 

@@ -47,6 +47,8 @@ def _agglomerate_ext(module_name, queue_decl):
     headers = Path(tempfile.mkdtemp())
     (headers / "ScoringFunction.h").write_text(_MEAN_SCORING)
     (headers / "Queue.h").write_text(queue_decl)
+    (headers / "AffType.h").write_text("typedef float AffValue;\ntypedef float ScoreValue;\n")
+    (headers / "SegType.h").write_text("typedef uint64_t SegID;\n")
     pyx_path = _gen_pyx_dir / f"{module_name}.pyx"
     pyx_path.write_text(_agglomerate_pyx_src)
     return Extension(
@@ -64,4 +66,16 @@ agglomerate_default = _agglomerate_ext("_agglomerate_default", _PRIORITY_QUEUE)
 # (MeanAffinity, BinQueue<256>) -> discretize_queue == 256 (production agglomeration)
 agglomerate_bin256 = _agglomerate_ext("_agglomerate_mean_bin256", _BIN_QUEUE_256)
 
-setup(ext_modules=cythonize([evaluate, agglomerate_default, agglomerate_bin256]))
+merge = Extension(
+    name="waterz.merge",
+    sources=[
+        "src/waterz/merge.pyx",
+        "src/waterz/frontend_merge.cpp",
+    ],
+    include_dirs=include_dirs,
+    language="c++",
+    extra_link_args=["-std=c++17"],
+    extra_compile_args=["-std=c++17", "-w", "-O2"],
+)
+
+setup(ext_modules=cythonize([evaluate, agglomerate_default, agglomerate_bin256, merge]))

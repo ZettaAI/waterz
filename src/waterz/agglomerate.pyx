@@ -1,3 +1,4 @@
+# cython: language_level=3
 from libcpp.vector cimport vector
 from libc.stdint cimport uint64_t, uint32_t, uint8_t
 from libcpp cimport bool
@@ -35,26 +36,26 @@ def agglomerate(
         semantic: np.array | None,
         segconstraint: np.array | None,
 
-        aff_threshold_low: float,
-        aff_threshold_high: float,
+        aff_threshold_low,
+        aff_threshold_high,
 
-        semantic_aff_threshold: float,
-        semantic_size_threshold: int,
-        semantic_signal_ratio: float,
+        semantic_aff_threshold,
+        semantic_size_threshold,
+        semantic_signal_ratio,
 
-        semantic_taint_labels: list,
-        semantic_taint_threshold: float,
+        semantic_taint_labels,
+        semantic_taint_threshold,
 
-        size_heuristic_aff_threshold: float,
-        size_heuristic_small_threshold: int,
-        size_heuristic_large_threshold: int,
+        size_heuristic_aff_threshold,
+        size_heuristic_small_threshold,
+        size_heuristic_large_threshold,
 
-        return_merge_history: bool,
-        return_region_graph: bool,
-        return_region_graph_metadata: bool,
+        return_merge_history,
+        return_region_graph,
+        return_region_graph_metadata,
     ):
 
-    # the C++ part assumes contiguous memory, make sure we have it (and do 
+    # the C++ part assumes contiguous memory, make sure we have it (and do
     # nothing, if we do)
     if affs is not None and not affs.flags['C_CONTIGUOUS']:
         print("Creating memory-contiguous affinity arrray (avoid this by passing C_CONTIGUOUS arrays)")
@@ -143,17 +144,17 @@ def __initialize(
         np.ndarray[uint32_t, ndim=3] gt,
         np.ndarray[uint8_t, ndim=3] semantic,
         np.ndarray[uint64_t, ndim=3] segconstraint,
-        aff_threshold_low: float,
-        aff_threshold_high: float,
-        semantic_aff_threshold: float,
-        semantic_size_threshold: int,
-        semantic_signal_ratio: float,
-        semantic_taint_labels: list,
-        semantic_taint_threshold: float,
-        size_heuristic_aff_threshold: float,
-        size_heuristic_small_threshold: int,
-        size_heuristic_large_threshold: int,
-        find_fragments: bool,
+        aff_threshold_low,
+        aff_threshold_high,
+        semantic_aff_threshold,
+        semantic_size_threshold,
+        semantic_signal_ratio,
+        semantic_taint_labels,
+        semantic_taint_threshold,
+        size_heuristic_aff_threshold,
+        size_heuristic_small_threshold,
+        size_heuristic_large_threshold,
+        find_fragments,
     ):
 
     cdef float*    aff_data
@@ -173,15 +174,6 @@ def __initialize(
         semantic_data = &semantic[0,0,0]
     if segconstraint is not None:
         segconstraint_data = &segconstraint[0,0,0]
-
-    # return initialize(
-    #     affs.shape[1], affs.shape[2], affs.shape[3],
-    #     aff_data,
-    #     segmentation_data,
-    #     gt_data,
-    #     aff_threshold_low,
-    #     aff_threshold_high,
-    #     find_fragments
 
     return initialize(
         width=affs.shape[1],
@@ -241,12 +233,18 @@ cdef extern from "frontend_agglomerate.h":
         uint64_t a
         uint64_t b
         uint64_t c
-        double score
+        float score
 
     struct ScoredEdge:
         uint64_t u
         uint64_t v
-        double score
+        float score
+
+    struct RichScoredEdge:
+        uint64_t u
+        uint64_t v
+        float score
+        uint64_t contact_area
 
     struct WaterzState:
         int     context
@@ -289,4 +287,77 @@ cdef extern from "frontend_agglomerate.h":
 
     vector[double] getRegionGraphMeta(WaterzState& state)
 
+    vector[ScoredEdge] c_buildRegionGraphOnly "buildRegionGraphOnly" (
+            size_t          width,
+            size_t          height,
+            size_t          depth,
+            const float*    affinity_data,
+            uint64_t*       segmentation_data)
+
+    vector[RichScoredEdge] c_buildRegionGraphRich "buildRegionGraphRich" (
+            size_t          width,
+            size_t          height,
+            size_t          depth,
+            const float*    affinity_data,
+            uint64_t*       segmentation_data)
+
     void free(WaterzState& state)
+
+
+def buildRegionGraphOnly(
+        np.ndarray[np.float32_t, ndim=4] affs,
+        np.ndarray[uint64_t, ndim=3] seg):
+    """Build scored region graph without RegionMerging overhead."""
+    if not affs.flags['C_CONTIGUOUS']:
+        affs = np.ascontiguousarray(affs)
+    if not seg.flags['C_CONTIGUOUS']:
+        seg = np.ascontiguousarray(seg)
+
+    cdef size_t width = affs.shape[1]
+    cdef size_t height = affs.shape[2]
+    cdef size_t depth = affs.shape[3]
+    cdef float* aff_data = &affs[0,0,0,0]
+    cdef uint64_t* seg_data = &seg[0,0,0]
+
+    cdef vector[ScoredEdge] edges = c_buildRegionGraphOnly(
+        width, height, depth, aff_data, seg_data)
+
+    result = []
+    cdef size_t i
+    for i in range(edges.size()):
+        result.append({
+            'u': edges[i].u,
+            'v': edges[i].v,
+            'score': edges[i].score,
+        })
+    return result
+
+
+def buildRegionGraphRich(
+        np.ndarray[np.float32_t, ndim=4] affs,
+        np.ndarray[uint64_t, ndim=3] seg):
+    """Build scored region graph with contact area per edge."""
+    if not affs.flags['C_CONTIGUOUS']:
+        affs = np.ascontiguousarray(affs)
+    if not seg.flags['C_CONTIGUOUS']:
+        seg = np.ascontiguousarray(seg)
+
+    cdef size_t width = affs.shape[1]
+    cdef size_t height = affs.shape[2]
+    cdef size_t depth = affs.shape[3]
+    cdef float* aff_data = &affs[0,0,0,0]
+    cdef uint64_t* seg_data = &seg[0,0,0]
+
+    cdef vector[RichScoredEdge] edges = c_buildRegionGraphRich(
+        width, height, depth, aff_data, seg_data)
+
+    result = []
+    cdef size_t i
+    for i in range(edges.size()):
+        result.append({
+            'u': edges[i].u,
+            'v': edges[i].v,
+            'score': edges[i].score,
+            'contact_area': edges[i].contact_area,
+        })
+    return result

@@ -6,7 +6,7 @@
 #include <iostream>
 
 /**
- * Extract the region graph from a segmentation. Edges are annotated with the 
+ * Extract the region graph from a segmentation. Edges are annotated with the
  * maximum affinity between the regions.
  *
  * @param aff [in]
@@ -89,6 +89,100 @@ get_region_graph(
 							statisticsProvider.notifyNewEdge(e);
 						}
 						statisticsProvider.addAffinity(e, aff_data[2 * aff_channel_size + idx]);
+					}
+				}
+			}
+
+	std::cout << "Region graph number of edges: " << rg.edges().size() << std::endl;
+}
+
+/**
+ * Like get_region_graph but also outputs the contact count (number of
+ * affinity samples) per edge.  edge_counts is resized to rg.numEdges()
+ * after construction; element i is the contact area for edge i.
+ */
+template<typename AG, typename V, typename StatisticsProviderType>
+inline
+void
+get_region_graph(
+		const AG& aff,
+		const V& seg,
+		std::size_t max_segid,
+		StatisticsProviderType& statisticsProvider,
+		RegionGraph<typename V::element>& rg,
+		std::vector<uint64_t>& edge_counts) {
+
+	typedef typename AG::element F;
+	typedef typename V::element ID;
+	typedef RegionGraph<ID> RegionGraphType;
+	typedef typename RegionGraphType::EdgeIdType EdgeIdType;
+
+	std::ptrdiff_t zdim = aff.shape()[1];
+	std::ptrdiff_t ydim = aff.shape()[2];
+	std::ptrdiff_t xdim = aff.shape()[3];
+
+	// Use raw pointers for direct memory access instead of boost operator[][]
+	const ID* seg_data = seg.data();
+	const F* aff_data = aff.data();
+	const std::size_t slice_size = ydim * xdim;
+	const std::size_t aff_channel_size = zdim * slice_size;
+
+	// Per-edge contact counts tracked via a parallel vector
+	// (edge_counts[e] = number of affinity samples for edge e)
+
+	for (std::ptrdiff_t z = 0; z < zdim; ++z)
+		for (std::ptrdiff_t y = 0; y < ydim; ++y)
+			for (std::ptrdiff_t x = 0; x < xdim; ++x) {
+
+				std::size_t idx = z * slice_size + y * xdim + x;
+				ID id1 = seg_data[idx];
+				statisticsProvider.addVoxel(id1, x, y, z);
+
+				// d=0: z-affinity, neighbor at z-1
+				if (z > 0) {
+					ID id2 = seg_data[idx - slice_size];
+					if (id1 != id2) {
+						EdgeIdType e = rg.findEdge(id1, id2);
+						if (e == RegionGraphType::NoEdge) {
+							e = rg.addEdge(id1, id2);
+							statisticsProvider.notifyNewEdge(e);
+							if (e >= edge_counts.size())
+								edge_counts.resize(e + 1, 0);
+						}
+						statisticsProvider.addAffinity(e, aff_data[idx]);
+						edge_counts[e]++;
+					}
+				}
+
+				// d=1: y-affinity, neighbor at y-1
+				if (y > 0) {
+					ID id2 = seg_data[idx - xdim];
+					if (id1 != id2) {
+						EdgeIdType e = rg.findEdge(id1, id2);
+						if (e == RegionGraphType::NoEdge) {
+							e = rg.addEdge(id1, id2);
+							statisticsProvider.notifyNewEdge(e);
+							if (e >= edge_counts.size())
+								edge_counts.resize(e + 1, 0);
+						}
+						statisticsProvider.addAffinity(e, aff_data[aff_channel_size + idx]);
+						edge_counts[e]++;
+					}
+				}
+
+				// d=2: x-affinity, neighbor at x-1
+				if (x > 0) {
+					ID id2 = seg_data[idx - 1];
+					if (id1 != id2) {
+						EdgeIdType e = rg.findEdge(id1, id2);
+						if (e == RegionGraphType::NoEdge) {
+							e = rg.addEdge(id1, id2);
+							statisticsProvider.notifyNewEdge(e);
+							if (e >= edge_counts.size())
+								edge_counts.resize(e + 1, 0);
+						}
+						statisticsProvider.addAffinity(e, aff_data[2 * aff_channel_size + idx]);
+						edge_counts[e]++;
 					}
 				}
 			}
