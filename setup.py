@@ -14,6 +14,10 @@ include_dirs = [
 if sys.platform == "darwin":
     include_dirs.append("/opt/homebrew/include")  # homebrew ... for boost
 
+# The watershed's per-voxel pass runs its planes in parallel under OpenMP; without it (Apple
+# clang has no -fopenmp) the pragma is ignored and the pass runs serially, same labels.
+_openmp = ["-fopenmp"] if sys.platform.startswith("linux") else []
+
 evaluate = Extension(
     name="waterz.evaluate",
     sources=[
@@ -56,8 +60,8 @@ def _agglomerate_ext(module_name, queue_decl):
         sources=[str(pyx_path), "src/waterz/frontend_agglomerate.cpp"],
         include_dirs=include_dirs + [str(headers)],
         language="c++",
-        extra_link_args=["-std=c++17"],
-        extra_compile_args=["-std=c++17", "-w", "-O3"],
+        extra_link_args=["-std=c++17"] + _openmp,
+        extra_compile_args=["-std=c++17", "-w", "-O3"] + _openmp,
     )
 
 

@@ -59,7 +59,9 @@ watershed(const PaddedAffs<Code>& aff, float low, float high, std::vector<Label>
 
 	// The border voxels: with every boundary flag set, abiss writes 0 there whatever the
 	// affinity (front/back border codes are 0), which the zero-filled volume already holds.
+	// Each voxel's flags depend on its own faces alone, so the planes run in parallel.
 
+#pragma omp parallel for schedule(static)
 	for (index z = 1; z < zdim - 1; ++z)
 		for (index y = 1; y < ydim - 1; ++y)
 			for (index x = 1; x < xdim - 1; ++x) {
@@ -164,12 +166,138 @@ watershed(const PaddedAffs<Code>& aff, float low, float high, std::vector<Label>
 
 typedef std::vector<std::tuple<float, Label, Label>> RegionGraph;
 
+// The size merge's input: the region graph's edges in abiss's order -- affinity high first,
+// ties in the order the pairs were first seen -- cut at the first edge at or below `low`,
+// which is where the merge stops reading.
+struct SortedEdges {
+	std::vector<Label> a, b;
+};
+
+// abiss's get_region_graph() with every boundary flag set, as at the pinned commit -- one edge
+// per pair of touching labels, its affinity the largest over their faces, the edges in the
+// order the pairs are first met by the scan and stable-sorted by affinity, high first -- built
+// without a hash map. Labels are numbered in scan order, so the larger label of a face is a
+// basin the scan met recently, and usually a small one with few neighbours: each label's
+// edges as the larger label are kept on a list threaded through the edge arrays, most
+// recently hit first, and a lookup walks a short list that is hot in cache. Affinities are
+// carried as their rank among the table's distinct values, so the stable sort is a counting
+// sort over the ranks with the same ties. Needs every table value >= 0 (abiss starts each
+// edge at 0 and takes the max), which the caller checks.
+template <typename Code>
+inline SortedEdges
+region_graph_sorted(const PaddedAffs<Code>& aff, const std::vector<Label>& seg_raw, std::size_t max_segid,
+		float low) {
+	typedef std::ptrdiff_t index;
+	const index X = aff.X, Y = aff.Y, Z = aff.Z;
+	const index xdim = X + 2, ydim = Y + 2;
+	const std::size_t ncodes = std::size_t(1) << (8 * sizeof(Code));
+	std::vector<float> values(aff.lut, aff.lut + ncodes);
+	std::sort(values.begin(), values.end());
+	values.erase(std::unique(values.begin(), values.end()), values.end());
+	std::vector<uint16_t> rank_of(ncodes);
+	for (std::size_t c = 0; c < ncodes; ++c)
+		rank_of[c] = (uint16_t)(std::lower_bound(values.begin(), values.end(), aff.lut[c]) - values.begin());
+	const std::size_t nranks = values.size();
+
+	// Each label's edges as the larger label are a list threaded through `link` (the other
+	// label and the next edge side by side, so a step reads one cache line); the edges
+	// themselves are numbered, and their arrays filled, in the order the pairs are first met,
+	// which reordering a list does not touch.
+	struct Link {
+		Label hi;
+		uint32_t next;
+	};
+	std::vector<uint32_t> head(max_segid + 1, UINT32_MAX);
+	std::vector<Link> link;
+	std::vector<Label> ea;
+	std::vector<uint16_t> er;
+	const std::size_t guess = std::min<std::size_t>(max_segid * 6, (std::size_t)3 * X * Y * Z);
+	link.reserve(guess); ea.reserve(guess); er.reserve(guess);
+	auto face = [&](Label s, Label t, uint16_t r) {
+		const Label lo = std::min(s, t), hi = std::max(s, t);
+		uint32_t prev = UINT32_MAX;
+		for (uint32_t e = head[hi]; e != UINT32_MAX; prev = e, e = link[e].next) {
+			if (link[e].hi == lo) {
+				if (r > er[e]) er[e] = r;
+				if (prev != UINT32_MAX) {
+					link[prev].next = link[e].next;
+					link[e].next = head[hi];
+					head[hi] = e;
+				}
+				return;
+			}
+		}
+		const uint32_t e = (uint32_t)ea.size();
+		ea.push_back(hi); er.push_back(r); link.push_back(Link{lo, head[hi]});
+		head[hi] = e;
+	};
+	const std::size_t plane = (std::size_t)X * Y * Z;
+	const Code* cz = aff.codes;              // channel z
+	const Code* cy = aff.codes + plane;      // channel y
+	const Code* cx = aff.codes + 2 * plane;  // channel x
+	for (index z = 1; z <= Z; ++z)
+		for (index y = 1; y <= Y; ++y) {
+			const Label* row = &seg_raw[xdim * (y + ydim * z)];
+			const Label* row_y = row - xdim;
+			const Label* row_z = row - xdim * ydim;
+			const std::size_t base = ((std::size_t)(z - 1) * Y + (y - 1)) * X - 1;
+			for (index x = 1; x <= X; ++x) {
+				const Label s = row[x];
+				if (!s)
+					continue;
+				if (x > 1) {
+					const Label t = row[x - 1];
+					if (t && s != t) face(s, t, rank_of[cx[base + x]]);
+				}
+				if (y > 1) {
+					const Label t = row_y[x];
+					if (t && s != t) face(s, t, rank_of[cy[base + x]]);
+				}
+				if (z > 1) {
+					const Label t = row_z[x];
+					if (t && s != t) face(s, t, rank_of[cz[base + x]]);
+				}
+			}
+		}
+	std::vector<uint32_t>().swap(head);
+	std::vector<Label> eb(ea.size());
+	for (std::size_t e = 0; e < ea.size(); ++e) {
+		eb[e] = ea[e];
+		ea[e] = link[e].hi;
+	}
+	std::vector<Link>().swap(link);
+
+	std::vector<std::size_t> start(nranks + 1, 0);
+	for (std::size_t e = 0; e < er.size(); ++e)
+		++start[nranks - 1 - er[e]];
+	std::size_t keep = 0;
+	for (std::size_t r = 0; r < nranks; ++r)
+		if (values[nranks - 1 - r] > low) keep += start[r];
+	std::size_t acc = 0;
+	for (std::size_t r = 0; r <= nranks; ++r) {
+		const std::size_t n = start[r];
+		start[r] = acc;
+		acc += n;
+	}
+	SortedEdges out;
+	out.a.resize(keep);
+	out.b.resize(keep);
+	for (std::size_t e = 0; e < er.size(); ++e) {
+		const std::size_t pos = start[nranks - 1 - er[e]]++;
+		if (pos < keep) {
+			out.a[pos] = ea[e];
+			out.b[pos] = eb[e];
+		}
+	}
+	return out;
+}
+
 // abiss's get_region_graph() with every boundary flag set, as at the pinned commit: one edge
 // map keyed on the packed (min, max) pair, iterated in insertion order -- the first-seen order
 // -- then stable-sorted by affinity, high first.
 template <typename Code>
 inline RegionGraph
-region_graph(const PaddedAffs<Code>& aff, const std::vector<Label>& seg_raw, std::size_t max_segid) {
+region_graph_hashed(const PaddedAffs<Code>& aff, const std::vector<Label>& seg_raw, std::size_t max_segid) {
 	typedef std::ptrdiff_t index;
 	const index xdim = aff.X + 2, ydim = aff.Y + 2, zdim = aff.Z + 2;
 	auto at = [&](index x, index y, index z) -> Label { return seg_raw[x + xdim * (y + ydim * z)]; };
@@ -240,20 +368,23 @@ inline bool try_merge(std::vector<std::size_t>& counts, Sets& sets, Label s1, La
 // abiss's merge_segments() as the zetta wrapper calls it -- (size, low) thresholds and the
 // dust floor both at the size threshold -- for the labels only (its rebuilt region graph is
 // output nobody reads here).
-inline void merge_segments(std::vector<Label>& seg_raw, RegionGraph& rg, std::vector<std::size_t>& counts,
-		std::size_t size_threshold, float low) {
+inline void merge_segments(std::vector<Label>& seg_raw, const SortedEdges& rg, std::vector<std::size_t>& counts,
+		std::size_t size_threshold) {
 	std::vector<Label> rank(counts.size());
 	std::vector<Label> parent(counts.size());
 	boost::disjoint_sets<Label*, Label*> sets(&rank[0], &parent[0]);
 	for (Label i = 0; i < counts.size(); i++)
 		sets.make_set(i);
-	auto rit = rg.begin();
-	while ((rit != rg.end()) && (std::get<0>(*rit) > low)) {
-		Label s1 = sets.find_set(std::get<1>(*rit));
-		Label s2 = sets.find_set(std::get<2>(*rit));
+	const std::size_t ne = rg.a.size();
+	for (std::size_t e = 0; e < ne; ++e) {
+		if (e + 16 < ne) {
+			__builtin_prefetch(&parent[rg.a[e + 16]]);
+			__builtin_prefetch(&parent[rg.b[e + 16]]);
+		}
+		Label s1 = sets.find_set(rg.a[e]);
+		Label s2 = sets.find_set(rg.b[e]);
 		if (s1 != s2 && s1 && s2)
 			try_merge(counts, sets, s1, s2, size_threshold);
-		++rit;
 	}
 	std::vector<Label> remaps(counts.size());
 	counts[0] &= ~ON_BORDER;
@@ -290,8 +421,24 @@ inline void run(const Code* codes, const float* lut, std::size_t Z, std::size_t 
 		? watershed<Code, uint32_t>(aff, low, high, seg_raw)
 		: watershed<Code, uint64_t>(aff, low, high, seg_raw);
 	if (size_threshold > 0) {
-		RegionGraph rg = region_graph(aff, seg_raw, counts.size() - 1);
-		merge_segments(seg_raw, rg, counts, size_threshold, low);
+		// The list-threaded graph numbers its edges in 32 bits and ranks the table's values,
+		// which reproduces abiss's max-from-0 only when no value is negative; otherwise the
+		// hashed graph, sorted the way abiss sorts it.
+		const std::size_t ncodes = std::size_t(1) << (8 * sizeof(Code));
+		const bool nonnegative = std::all_of(lut, lut + ncodes, [](float v) { return v >= 0.0f; });
+		SortedEdges rg;
+		if (nonnegative && (std::size_t)3 * X * Y * Z < (std::size_t)UINT32_MAX) {
+			rg = region_graph_sorted(aff, seg_raw, counts.size() - 1, low);
+		} else {
+			RegionGraph hashed = region_graph_hashed(aff, seg_raw, counts.size() - 1);
+			for (const auto& e : hashed) {
+				if (!(std::get<0>(e) > low))
+					break;
+				rg.a.push_back(std::get<1>(e));
+				rg.b.push_back(std::get<2>(e));
+			}
+		}
+		merge_segments(seg_raw, rg, counts, size_threshold);
 	}
 	const std::size_t xdim = X + 2, ydim = Y + 2;
 	for (std::size_t z = 0; z < Z; ++z)
