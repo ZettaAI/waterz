@@ -201,6 +201,43 @@ def agglomerate_shell(
     free(state)
 
 
+def watershed_codes(aff_codes, lut, float low, float high, size_t size_threshold):
+    """abiss's watershed and size merge on 8- or 16-bit affinity codes read through ``lut``.
+
+    ``aff_codes`` is C-contiguous ``(3, Z, Y, X)`` with channels z, y, x (waterz's order).
+    Returns uint32 labels ``(Z, Y, X)``: the labels ``abiss.watershed`` gives on the tabulated
+    values, without a float copy, a padded copy or uint64 labels.
+    """
+    if not aff_codes.flags['C_CONTIGUOUS'] or aff_codes.ndim != 4 or aff_codes.shape[0] != 3:
+        raise ValueError("aff_codes must be C-contiguous (3, Z, Y, X)")
+    if aff_codes.dtype not in (np.uint8, np.uint16):
+        raise TypeError(f"aff_codes must be uint8 or uint16, got {aff_codes.dtype}")
+    if lut.shape[0] != (1 << (8 * aff_codes.dtype.itemsize)):
+        raise ValueError("lut must have one entry per code")
+    out = np.zeros(aff_codes.shape[1:], dtype=np.uint32)
+    __watershed_codes(
+        aff_codes if aff_codes.dtype == np.uint8 else None,
+        aff_codes if aff_codes.dtype == np.uint16 else None,
+        np.ascontiguousarray(lut, dtype=np.float32), low, high, size_threshold, out)
+    return out
+
+
+def __watershed_codes(
+        np.ndarray[uint8_t, ndim=4] codes8,
+        np.ndarray[uint16_t, ndim=4] codes16,
+        np.ndarray[np.float32_t, ndim=1] lut,
+        float low, float high, size_t size_threshold,
+        np.ndarray[uint32_t, ndim=3] out):
+    cdef const uint8_t* c8 = NULL
+    cdef const uint16_t* c16 = NULL
+    if codes8 is not None:
+        c8 = &codes8[0, 0, 0, 0]
+    else:
+        c16 = &codes16[0, 0, 0, 0]
+    watershedCodes(out.shape[0], out.shape[1], out.shape[2], c8, c16, &lut[0], low, high,
+                   size_threshold, &out[0, 0, 0])
+
+
 def __initialize_shell(
         np.ndarray[uint32_t, ndim=3] fragments,
         size_t num_nodes,
@@ -420,6 +457,10 @@ cdef extern from "frontend_agglomerate.h":
             uint64_t        size_heuristic_small_threshold,
             uint64_t        size_heuristic_large_threshold)
     vector[uint64_t] getRoots(WaterzState& state, size_t num_nodes)
+    void watershedCodes(
+            size_t width, size_t height, size_t depth,
+            const uint8_t* codes8, const uint16_t* codes16, const float* lut,
+            float low, float high, size_t size_threshold, uint32_t* out)
     vector[Merge] mergeUntil(
             WaterzState& state,
             float        threshold)

@@ -101,3 +101,18 @@ def test_agglomerate_shell_matches_agglomerate_on_the_same_values(seed) -> None:
     for r, g in zip(ref, got):
         np.testing.assert_array_equal(g[0][frag], r[0])
         assert repr(r[1:]) == repr(g[1:])
+
+
+def test_watershed_codes_separates_basins_and_merges_small_ones() -> None:
+    """Two strong regions split by a weak plane come out as two labels; a size floor above
+    one of them folds it into its neighbour across the strongest remaining link."""
+    shape = (4, 6, 10)
+    codes = np.full((3, *shape), 60000, dtype=np.uint16)
+    codes[2, :, :, 7] = 1000  # the x faces at x = 7: a weak wall between x < 7 and x >= 7
+    lut = (np.arange(65536, dtype=np.float32) / np.float32(65535)).astype(np.float32)
+    labels = wz.watershed_codes(codes, lut, 0.001, 0.99, 0)
+    assert len(np.unique(labels[:, :, :7])) == 1 and len(np.unique(labels[:, :, 7:])) == 1
+    assert labels[0, 0, 0] != labels[0, 0, 9]
+    merged = wz.watershed_codes(codes, lut, 0.001, 0.99, 100)
+    assert len(np.unique(merged)) == 1
+    np.testing.assert_array_equal(wz.watershed_codes(codes, lut, 0.001, 0.99, 0), labels)

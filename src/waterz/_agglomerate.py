@@ -230,6 +230,28 @@ _PRECOMPILED_MODULES = {
 }
 
 
+def watershed_codes(
+    aff_codes: NDArray,
+    lut: NDArray[np.float32],
+    aff_threshold_low: float,
+    aff_threshold_high: float,
+    size_threshold: int = 0,
+) -> NDArray[np.uint32]:
+    """abiss's watershed (steepest ascent, basin search, size merge with its dust floor) on
+    affinity codes read through ``lut``: uint32 labels ``(Z, Y, X)`` identical to
+    ``abiss.watershed`` on the tabulated values, from ``(3, Z, Y, X)`` codes with channels z,
+    y, x. No float, padded or uint64 copy is made."""
+    import importlib
+
+    module = importlib.import_module(
+        f"waterz.{_PRECOMPILED_MODULES[(_DEFAULT_SCORING, 256, np.dtype('float32'), np.dtype('uint64'))]}"
+    )
+    return module.watershed_codes(
+        aff_codes, np.ascontiguousarray(lut, dtype=np.float32), float(aff_threshold_low),
+        float(aff_threshold_high), int(size_threshold),
+    )
+
+
 def agglomerate_shell(
     fragments: NDArray[np.uint32],
     aff_codes: NDArray,

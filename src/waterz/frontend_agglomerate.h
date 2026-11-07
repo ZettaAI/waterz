@@ -226,6 +226,13 @@ WaterzState initialize_shell(
 		size_t          size_heuristic_small_threshold,
 		size_t          size_heuristic_large_threshold);
 
+// abiss's watershed + size merge on affinity codes read through a table, into uint32 labels
+// (Z, Y, X); exactly one of codes8 / codes16 is given. See backend/abiss_watershed.hpp.
+void watershedCodes(
+		size_t width, size_t height, size_t depth,
+		const uint8_t* codes8, const uint16_t* codes16, const float* lut,
+		float low, float high, size_t size_threshold, uint32_t* out);
+
 // The root of every node after the merges so far.
 std::vector<SegID> getRoots(WaterzState& state, size_t num_nodes);
 

@@ -14,6 +14,7 @@
 #include "backend/SemanticTaintConstraintProvider.hpp"
 #include "backend/SegConstraintProvider.hpp"
 #include "backend/SizeHeuristicConstraintProvider.hpp"
+#include "backend/abiss_watershed.hpp"
 
 std::map<int, WaterzContext*> WaterzContext::_contexts;
 int WaterzContext::_nextId = 0;
@@ -400,6 +401,17 @@ initialize_shell(
 	WaterzState initial_state;
 	initial_state.context = context->id;
 	return initial_state;
+}
+
+void
+watershedCodes(
+		size_t width, size_t height, size_t depth,
+		const uint8_t* codes8, const uint16_t* codes16, const float* lut,
+		float low, float high, size_t size_threshold, uint32_t* out) {
+	if (codes8 != NULL)
+		abiss_ws::run<uint8_t>(codes8, lut, width, height, depth, low, high, size_threshold, out);
+	else
+		abiss_ws::run<uint16_t>(codes16, lut, width, height, depth, low, high, size_threshold, out);
 }
 
 std::vector<SegID>

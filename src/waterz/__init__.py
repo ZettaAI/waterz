@@ -11,6 +11,7 @@ from ._agglomerate import (
     agglomerate,
     agglomerate_shell,
     build_region_graph_only,
+    watershed_codes,
     build_region_graph_rich,
 )
 from ._merge import (
@@ -28,6 +29,7 @@ from .evaluate import evaluate
 __all__ = [
     "agglomerate",
     "agglomerate_shell",
+    "watershed_codes",
     "build_region_graph_only",
     "build_region_graph_rich",
     "dust_merge_from_region_graph",
