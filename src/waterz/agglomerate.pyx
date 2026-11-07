@@ -1,6 +1,6 @@
 # cython: language_level=3
 from libcpp.vector cimport vector
-from libc.stdint cimport uint64_t, uint32_t, uint8_t
+from libc.stdint cimport uint64_t, uint32_t, uint16_t, uint8_t
 from libcpp cimport bool
 from libcpp.string cimport string
 
@@ -137,6 +137,123 @@ def agglomerate(
             yield result
 
     free(state)
+
+def agglomerate_shell(
+        fragments,
+        num_nodes,
+        aff_codes,
+        lut,
+        thresholds,
+        semantic,
+        lowres_constraint,
+        factors,
+        offsets,
+        node_constraint,
+        semantic_aff_threshold,
+        semantic_size_threshold,
+        semantic_signal_ratio,
+        semantic_taint_labels,
+        semantic_taint_threshold,
+        size_heuristic_aff_threshold,
+        size_heuristic_small_threshold,
+        size_heuristic_large_threshold,
+        return_merge_history,
+        return_region_graph,
+        return_region_graph_metadata,
+    ):
+    """Agglomerate from compact uint32 fragments and affinity CODES read through ``lut``.
+
+    Yields, per threshold, ``(roots,)`` plus the merge history, region graph and its metadata
+    as requested: ``roots[n]`` is the node fragment ``n`` belongs to. Node ids are the
+    fragment values. Every array must be C-contiguous; ``aff_codes`` is uint8 or uint16
+    ``(3, Z, Y, X)`` with channels z, y, x, and ``lut`` has an entry for every code.
+    """
+    for arr in (fragments, aff_codes, lut, semantic, lowres_constraint, node_constraint):
+        if arr is not None and not arr.flags['C_CONTIGUOUS']:
+            raise ValueError("agglomerate_shell needs C-contiguous arrays")
+    if aff_codes.dtype not in (np.uint8, np.uint16):
+        raise TypeError(f"aff_codes must be uint8 or uint16, got {aff_codes.dtype}")
+    if lut.shape[0] != (1 << (8 * aff_codes.dtype.itemsize)):
+        raise ValueError("lut must have one entry per code")
+    if tuple(aff_codes.shape[1:]) != tuple(fragments.shape) or aff_codes.shape[0] != 3:
+        raise ValueError("aff_codes must be (3, *fragments.shape)")
+    if node_constraint is not None and node_constraint.shape[0] != num_nodes:
+        raise ValueError("node_constraint needs one entry per node")
+    cdef WaterzState state = __initialize_shell(
+        fragments, num_nodes,
+        aff_codes if aff_codes.dtype == np.uint8 else None,
+        aff_codes if aff_codes.dtype == np.uint16 else None,
+        lut, semantic, lowres_constraint, factors, offsets, node_constraint,
+        semantic_aff_threshold, semantic_size_threshold, semantic_signal_ratio,
+        semantic_taint_labels, semantic_taint_threshold,
+        size_heuristic_aff_threshold, size_heuristic_small_threshold,
+        size_heuristic_large_threshold)
+    for threshold in sorted(thresholds):
+        merge_history = mergeUntil(state, threshold)
+        result = (np.asarray(getRoots(state, num_nodes), dtype=np.uint64),)
+        if return_merge_history:
+            result += (merge_history,)
+        if return_region_graph:
+            result += (getRegionGraph(state),)
+        if return_region_graph_metadata:
+            result += (getRegionGraphMeta(state),)
+        yield result
+    free(state)
+
+
+def __initialize_shell(
+        np.ndarray[uint32_t, ndim=3] fragments,
+        size_t num_nodes,
+        np.ndarray[uint8_t, ndim=4] codes8,
+        np.ndarray[uint16_t, ndim=4] codes16,
+        np.ndarray[np.float32_t, ndim=1] lut,
+        np.ndarray[uint8_t, ndim=3] semantic,
+        np.ndarray[uint64_t, ndim=3] lowres_constraint,
+        factors,
+        offsets,
+        np.ndarray[uint64_t, ndim=1] node_constraint,
+        semantic_aff_threshold,
+        semantic_size_threshold,
+        semantic_signal_ratio,
+        semantic_taint_labels,
+        semantic_taint_threshold,
+        size_heuristic_aff_threshold,
+        size_heuristic_small_threshold,
+        size_heuristic_large_threshold,
+    ):
+    cdef const uint8_t* c8 = NULL
+    cdef const uint16_t* c16 = NULL
+    cdef const uint8_t* sem_data = NULL
+    cdef const uint64_t* lr_data = NULL
+    cdef const uint64_t* node_data = NULL
+    cdef vector[uint8_t] taint_labels_vec
+    cdef size_t lw = 0, lh = 0, ld = 0
+    for label in semantic_taint_labels:
+        taint_labels_vec.push_back(<uint8_t>label)
+    if codes8 is not None:
+        c8 = &codes8[0, 0, 0, 0]
+    else:
+        c16 = &codes16[0, 0, 0, 0]
+    if semantic is not None:
+        sem_data = &semantic[0, 0, 0]
+    if lowres_constraint is not None:
+        lr_data = &lowres_constraint[0, 0, 0]
+        lw = lowres_constraint.shape[0]
+        lh = lowres_constraint.shape[1]
+        ld = lowres_constraint.shape[2]
+    if node_constraint is not None:
+        node_data = &node_constraint[0]
+    fw, fh, fd = factors
+    ow, oh, od = offsets
+    return initialize_shell(
+        fragments.shape[0], fragments.shape[1], fragments.shape[2],
+        &fragments[0, 0, 0], num_nodes, c8, c16, &lut[0], sem_data,
+        lr_data, lw, lh, ld, fw, fh, fd, ow, oh, od, node_data,
+        semantic_aff_threshold, semantic_size_threshold, semantic_signal_ratio,
+        taint_labels_vec, semantic_taint_threshold,
+        size_heuristic_aff_threshold, size_heuristic_small_threshold,
+        size_heuristic_large_threshold)
+
 
 def __initialize(
         np.ndarray[np.float32_t, ndim=4] affs,
@@ -279,6 +396,30 @@ cdef extern from "frontend_agglomerate.h":
             size_t          height,
             size_t          depth,);
 
+    WaterzState initialize_shell(
+            size_t          width,
+            size_t          height,
+            size_t          depth,
+            const uint32_t* fragments,
+            size_t          num_nodes,
+            const uint8_t*  aff_codes8,
+            const uint16_t* aff_codes16,
+            const float*    lut,
+            const uint8_t*  semantic_data,
+            const uint64_t* lowres_constraint,
+            size_t lw, size_t lh, size_t ld,
+            size_t fw, size_t fh, size_t fd,
+            size_t ow, size_t oh, size_t od,
+            const uint64_t* node_constraint,
+            float           semantic_aff_threshold,
+            uint64_t        semantic_size_threshold,
+            float           semantic_signal_ratio,
+            const vector[uint8_t]& semantic_taint_labels,
+            float           semantic_taint_threshold,
+            float           size_heuristic_aff_threshold,
+            uint64_t        size_heuristic_small_threshold,
+            uint64_t        size_heuristic_large_threshold)
+    vector[uint64_t] getRoots(WaterzState& state, size_t num_nodes)
     vector[Merge] mergeUntil(
             WaterzState& state,
             float        threshold)

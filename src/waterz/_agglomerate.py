@@ -230,6 +230,60 @@ _PRECOMPILED_MODULES = {
 }
 
 
+def agglomerate_shell(
+    fragments: NDArray[np.uint32],
+    aff_codes: NDArray,
+    lut: NDArray[np.float32],
+    thresholds: Sequence[float],
+    semantic: NDArray[np.uint8] | None = None,
+    lowres_constraint: NDArray[np.uint64] | None = None,
+    constraint_factors: tuple[int, int, int] = (1, 1, 1),
+    constraint_offsets: tuple[int, int, int] = (0, 0, 0),
+    node_constraint: NDArray[np.uint64] | None = None,
+    num_nodes: int | None = None,
+    return_merge_history: bool = False,
+    return_region_graph: bool = False,
+    return_region_graph_metadata: bool = False,
+    semantic_aff_threshold: float = 0.5,
+    semantic_size_threshold: int = 100_000,
+    semantic_signal_ratio: float = 0.6,
+    semantic_taint_labels: list[int] = [],
+    semantic_taint_threshold: float = 0.0,
+    size_heuristic_aff_threshold: float = 1.0,
+    size_heuristic_small_threshold: int = 1_000_000,
+    size_heuristic_large_threshold: int = 10_000_000,
+    discretize_queue: int = 256,
+) -> Iterator[tuple]:
+    """Agglomerate from the shell: compact uint32 ``fragments`` (``Z Y X``), affinity codes
+    (uint8 or uint16, ``(3, Z, Y, X)``, channels z, y, x) read through ``lut``, and the
+    segmentation constraint as a coarse grid (voxel ``v`` reads
+    ``lowres[(v + offsets) // factors]``) or one id per node.
+
+    Gives the merges, region graph and roots that :func:`agglomerate` gives on
+    ``lut[aff_codes]`` with every face touching fragment 0 set to 0, without either volume
+    being built. Yields ``(roots, ...)`` per threshold; ``roots[n]`` is fragment ``n``'s node.
+    """
+    import importlib
+
+    name = _PRECOMPILED_MODULES.get(
+        (_DEFAULT_SCORING, discretize_queue, np.dtype("float32"), np.dtype("uint64"))
+    )
+    if name is None:
+        raise ValueError(f"no precompiled module for discretize_queue={discretize_queue}")
+    module = importlib.import_module(f"waterz.{name}")
+    n = int(fragments.max()) + 1 if num_nodes is None else int(num_nodes)
+    return module.agglomerate_shell(
+        fragments, n, aff_codes, np.ascontiguousarray(lut, dtype=np.float32), list(thresholds),
+        semantic, lowres_constraint, tuple(int(v) for v in constraint_factors),
+        tuple(int(v) for v in constraint_offsets), node_constraint,
+        semantic_aff_threshold, semantic_size_threshold, semantic_signal_ratio,
+        list(semantic_taint_labels), semantic_taint_threshold,
+        size_heuristic_aff_threshold, size_heuristic_small_threshold,
+        size_heuristic_large_threshold,
+        return_merge_history, return_region_graph, return_region_graph_metadata,
+    )
+
+
 def agglomerate(
     affs: NDArray[np.float32] | None = None,
     thresholds: Sequence[float] | None = None,

@@ -45,6 +45,25 @@ get_region_graph(
 	const std::size_t slice_size = ydim * xdim;
 	const std::size_t aff_channel_size = zdim * slice_size;
 
+	// The last pair seen along each axis, and its edge: neighbouring faces mostly repeat a
+	// pair, and the edge a pair maps to never changes while the graph is being built.
+	ID lastA[3] = {0, 0, 0};
+	ID lastB[3] = {0, 0, 0};
+	EdgeIdType lastE[3] = {RegionGraphType::NoEdge, RegionGraphType::NoEdge, RegionGraphType::NoEdge};
+	auto edgeOf = [&](int axis, ID id1, ID id2) -> EdgeIdType {
+		if (lastE[axis] != RegionGraphType::NoEdge && lastA[axis] == id1 && lastB[axis] == id2)
+			return lastE[axis];
+		EdgeIdType e = rg.findEdge(id1, id2);
+		if (e == RegionGraphType::NoEdge) {
+			e = rg.addEdge(id1, id2);
+			statisticsProvider.notifyNewEdge(e);
+		}
+		lastA[axis] = id1;
+		lastB[axis] = id2;
+		lastE[axis] = e;
+		return e;
+	};
+
 	for (std::ptrdiff_t z = 0; z < zdim; ++z)
 		for (std::ptrdiff_t y = 0; y < ydim; ++y)
 			for (std::ptrdiff_t x = 0; x < xdim; ++x) {
@@ -57,11 +76,7 @@ get_region_graph(
 				if (z > 0) {
 					ID id2 = seg_data[idx - slice_size];
 					if (id1 != id2) {
-						EdgeIdType e = rg.findEdge(id1, id2);
-						if (e == RegionGraphType::NoEdge) {
-							e = rg.addEdge(id1, id2);
-							statisticsProvider.notifyNewEdge(e);
-						}
+						EdgeIdType e = edgeOf(0, id1, id2);
 						statisticsProvider.addAffinity(e, aff_data[idx]);
 					}
 				}
@@ -70,11 +85,7 @@ get_region_graph(
 				if (y > 0) {
 					ID id2 = seg_data[idx - xdim];
 					if (id1 != id2) {
-						EdgeIdType e = rg.findEdge(id1, id2);
-						if (e == RegionGraphType::NoEdge) {
-							e = rg.addEdge(id1, id2);
-							statisticsProvider.notifyNewEdge(e);
-						}
+						EdgeIdType e = edgeOf(1, id1, id2);
 						statisticsProvider.addAffinity(e, aff_data[aff_channel_size + idx]);
 					}
 				}
@@ -83,11 +94,7 @@ get_region_graph(
 				if (x > 0) {
 					ID id2 = seg_data[idx - 1];
 					if (id1 != id2) {
-						EdgeIdType e = rg.findEdge(id1, id2);
-						if (e == RegionGraphType::NoEdge) {
-							e = rg.addEdge(id1, id2);
-							statisticsProvider.notifyNewEdge(e);
-						}
+						EdgeIdType e = edgeOf(2, id1, id2);
 						statisticsProvider.addAffinity(e, aff_data[2 * aff_channel_size + idx]);
 					}
 				}

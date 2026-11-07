@@ -32,9 +32,47 @@ public:
     semantic_size_threshold(semantic_size_threshold),
     semantic_signal_ratio(semantic_signal_ratio)
     {
-		for (std::size_t i = 0; i < num_voxels; i++) {
-            _semantic[seg_data[i]][semantic_data[i]] += 1;
-        }
+		// One update per RUN of equal (segment, label) voxels rather than per voxel. A run
+		// is flushed when it ends, and runs of one segment never overlap, so every label is
+		// still inserted into its segment's map in first-seen order: the maps, their
+		// iteration order and so every getDictMaxKey tie come out the same.
+		std::size_t i = 0;
+		while (i < num_voxels) {
+			const SegType s = seg_data[i];
+			const SemValue v = semantic_data[i];
+			std::size_t j = i + 1;
+			while (j < num_voxels && seg_data[j] == s && semantic_data[j] == v)
+				j++;
+			_semantic[s][v] += j - i;
+			i = j;
+		}
+    }
+
+	// The same counts over fragments of another integer type (compact uint32 ids).
+	template <typename InSeg>
+	SemanticConstraintProvider(
+        const SemValue *semantic_data,
+        const InSeg *seg_data,
+        size_t num_voxels,
+        float semantic_aff_threshold,
+        uint64_t semantic_size_threshold,
+        float semantic_signal_ratio,
+        bool /* compact */
+    ) :
+    semantic_aff_threshold(semantic_aff_threshold),
+    semantic_size_threshold(semantic_size_threshold),
+    semantic_signal_ratio(semantic_signal_ratio)
+    {
+		std::size_t i = 0;
+		while (i < num_voxels) {
+			const InSeg s = seg_data[i];
+			const SemValue v = semantic_data[i];
+			std::size_t j = i + 1;
+			while (j < num_voxels && seg_data[j] == s && semantic_data[j] == v)
+				j++;
+			_semantic[(SegType)s][v] += j - i;
+			i = j;
+		}
     }
 
     inline bool notifyNodeMerge(NodeIdType from, NodeIdType to) {

@@ -155,11 +155,33 @@ public:
 	 * segmentation created by previous calls to extractSegmentation(). In other 
 	 * words, it has to hold IDs that have been seen before.
 	 */
+	/**
+	 * The current root of every node in [0, numNodes): the segmentation
+	 * extractSegmentation() would write, as a table instead of a volume.
+	 */
+	std::vector<NodeIdType> extractRoots(std::size_t numNodes) {
+
+		std::vector<NodeIdType> roots(numNodes);
+		for (std::size_t n = 0; n < numNodes; n++)
+			roots[n] = getRoot(n);
+		return roots;
+	}
+
 	template <typename SegmentationVolume>
 	void extractSegmentation(SegmentationVolume& segmentation) {
 
-		for (std::size_t i = 0; i < segmentation.num_elements(); i++)
-			segmentation.data()[i] = getRoot(segmentation.data()[i]);
+		// Neighbouring voxels mostly repeat an id; look its root up once per run.
+		auto* data = segmentation.data();
+		const std::size_t n = segmentation.num_elements();
+		std::size_t i = 0;
+		while (i < n) {
+			const auto id = data[i];
+			const auto root = getRoot(id);
+			std::size_t j = i;
+			while (j < n && data[j] == id)
+				data[j++] = root;
+			i = j;
+		}
 	}
 
 	/**

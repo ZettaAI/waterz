@@ -26,11 +26,47 @@ public:
         float threshold
     ) : _threshold(threshold) {
         std::unordered_set<SemValue> taint_set(taint_labels.begin(), taint_labels.end());
-        for (size_t i = 0; i < num_voxels; i++) {
-            _total_counts[seg_data[i]] += 1;
-            if (taint_set.count(semantic_data[i])) {
-                _taint_counts[seg_data[i]] += 1;
+        // Per run of equal (segment, label) voxels: the same counts with one lookup a run.
+        size_t i = 0;
+        while (i < num_voxels) {
+            const SegType s = seg_data[i];
+            const SemValue v = semantic_data[i];
+            size_t j = i + 1;
+            while (j < num_voxels && seg_data[j] == s && semantic_data[j] == v)
+                j++;
+            _total_counts[s] += j - i;
+            if (taint_set.count(v)) {
+                _taint_counts[s] += j - i;
             }
+            i = j;
+        }
+    }
+
+    // The same counts over fragments of another integer type (compact uint32 ids).
+    template <typename InSeg>
+    SemanticTaintConstraintProvider(
+        const SemValue* semantic_data,
+        const InSeg* seg_data,
+        size_t num_voxels,
+        const std::vector<SemValue>& taint_labels,
+        float threshold,
+        bool /* compact */
+    ) : _threshold(threshold) {
+        bool taint[256] = {false};
+        for (auto l : taint_labels)
+            taint[(uint8_t)l] = true;
+        size_t i = 0;
+        while (i < num_voxels) {
+            const InSeg s = seg_data[i];
+            const SemValue v = semantic_data[i];
+            size_t j = i + 1;
+            while (j < num_voxels && seg_data[j] == s && semantic_data[j] == v)
+                j++;
+            _total_counts[(SegType)s] += j - i;
+            if (taint[(uint8_t)v]) {
+                _taint_counts[(SegType)s] += j - i;
+            }
+            i = j;
         }
     }
 

@@ -245,6 +245,169 @@ initialize(
 	return initial_state;
 }
 
+template <typename Code>
+static void
+region_graph_from_codes(
+		std::size_t zdim, std::size_t ydim, std::size_t xdim,
+		const uint32_t* seg_data,
+		const Code* codes,
+		const float* lut,
+		StatisticsProviderType& statisticsProvider,
+		RegionGraphType& rg) {
+
+	typedef RegionGraphType::EdgeIdType EdgeIdType;
+	const std::size_t slice_size = ydim * xdim;
+	const std::size_t aff_channel_size = zdim * slice_size;
+	SegID lastA[3] = {0, 0, 0};
+	SegID lastB[3] = {0, 0, 0};
+	EdgeIdType lastE[3] = {RegionGraphType::NoEdge, RegionGraphType::NoEdge, RegionGraphType::NoEdge};
+	auto edgeOf = [&](int axis, SegID id1, SegID id2) -> EdgeIdType {
+		if (lastE[axis] != RegionGraphType::NoEdge && lastA[axis] == id1 && lastB[axis] == id2)
+			return lastE[axis];
+		EdgeIdType e = rg.findEdge(id1, id2);
+		if (e == RegionGraphType::NoEdge) {
+			e = rg.addEdge(id1, id2);
+			statisticsProvider.notifyNewEdge(e);
+		}
+		lastA[axis] = id1;
+		lastB[axis] = id2;
+		lastE[axis] = e;
+		return e;
+	};
+	// A face touching fragment 0 carries 0, as the volume path zeroes it before scanning.
+	auto value = [&](std::size_t channel, std::size_t idx, SegID id1, SegID id2) -> AffValue {
+		if (id1 == 0 || id2 == 0)
+			return 0;
+		return lut[codes[channel * aff_channel_size + idx]];
+	};
+	for (std::ptrdiff_t z = 0; z < (std::ptrdiff_t)zdim; ++z)
+		for (std::ptrdiff_t y = 0; y < (std::ptrdiff_t)ydim; ++y)
+			for (std::ptrdiff_t x = 0; x < (std::ptrdiff_t)xdim; ++x) {
+				std::size_t idx = z * slice_size + y * xdim + x;
+				SegID id1 = seg_data[idx];
+				statisticsProvider.addVoxel(id1, x, y, z);
+				if (z > 0) {
+					SegID id2 = seg_data[idx - slice_size];
+					if (id1 != id2) {
+						EdgeIdType e = edgeOf(0, id1, id2);
+						statisticsProvider.addAffinity(e, value(0, idx, id1, id2));
+					}
+				}
+				if (y > 0) {
+					SegID id2 = seg_data[idx - xdim];
+					if (id1 != id2) {
+						EdgeIdType e = edgeOf(1, id1, id2);
+						statisticsProvider.addAffinity(e, value(1, idx, id1, id2));
+					}
+				}
+				if (x > 0) {
+					SegID id2 = seg_data[idx - 1];
+					if (id1 != id2) {
+						EdgeIdType e = edgeOf(2, id1, id2);
+						statisticsProvider.addAffinity(e, value(2, idx, id1, id2));
+					}
+				}
+			}
+	std::cout << "Region graph number of edges: " << rg.edges().size() << std::endl;
+}
+
+WaterzState
+initialize_shell(
+		size_t          width,
+		size_t          height,
+		size_t          depth,
+		const uint32_t* fragments,
+		size_t          num_nodes,
+		const uint8_t*  aff_codes8,
+		const uint16_t* aff_codes16,
+		const float*    lut,
+		const SemValue* semantic_data,
+		const SegID*    lowres_constraint,
+		size_t lw, size_t lh, size_t ld,
+		size_t fw, size_t fh, size_t fd,
+		size_t ow, size_t oh, size_t od,
+		const SegID*    node_constraint,
+		AffValue        semantic_aff_threshold,
+		size_t          semantic_size_threshold,
+		AffValue        semantic_signal_ratio,
+		const std::vector<SemValue>& semantic_taint_labels,
+		AffValue        semantic_taint_threshold,
+		AffValue        size_heuristic_aff_threshold,
+		size_t          size_heuristic_small_threshold,
+		size_t          size_heuristic_large_threshold) {
+
+	std::size_t num_voxels = width*height*depth;
+
+	std::cout << "counting regions and sizes..." << std::endl;
+	counts_t<std::size_t> sizes;
+	sizes.resize(num_nodes);
+	for (std::size_t i = 0; i < num_voxels; i++)
+		sizes[fragments[i]]++;
+
+	std::cout << "creating region graph for " << num_nodes << " nodes" << std::endl;
+	std::shared_ptr<RegionGraphType> regionGraph(new RegionGraphType(num_nodes));
+	std::shared_ptr<StatisticsProviderType> statisticsProvider(
+			new StatisticsProviderType(*regionGraph));
+
+	std::cout << "extracting region graph from codes..." << std::endl;
+	if (aff_codes8 != NULL)
+		region_graph_from_codes<uint8_t>(width, height, depth, fragments, aff_codes8, lut, *statisticsProvider, *regionGraph);
+	else
+		region_graph_from_codes<uint16_t>(width, height, depth, fragments, aff_codes16, lut, *statisticsProvider, *regionGraph);
+
+	std::shared_ptr<ScoringFunctionType> scoringFunction(
+			new ScoringFunctionType(*regionGraph, *statisticsProvider));
+	std::shared_ptr<RegionMergingType> regionMerging(new RegionMergingType(*regionGraph));
+	std::shared_ptr<vector<ConstraintProvider*>> constraints(new vector<ConstraintProvider*>());
+
+	if (semantic_data != NULL) {
+		std::cout << "getting semantic information..." << std::endl;
+		constraints->push_back(
+			new SemanticConstraintProvider<RegionGraphType, SemValue, SegID>(
+				semantic_data, fragments, num_voxels,
+				semantic_aff_threshold, semantic_size_threshold, semantic_signal_ratio, true));
+	}
+	if (semantic_data != NULL && !semantic_taint_labels.empty()) {
+		std::cout << "getting semantic taint constraint information..." << std::endl;
+		constraints->push_back(
+			new SemanticTaintConstraintProvider<RegionGraphType, SemValue, SegID>(
+				semantic_data, fragments, num_voxels,
+				semantic_taint_labels, semantic_taint_threshold, true));
+	}
+	if (lowres_constraint != NULL) {
+		std::cout << "getting seg constraint information from the coarse grid..." << std::endl;
+		constraints->push_back(
+			new SegConstraintProvider<RegionGraphType, SegID>(
+				fragments, width, height, depth,
+				lowres_constraint, lw, lh, ld, fw, fh, fd, ow, oh, od));
+	} else if (node_constraint != NULL) {
+		std::cout << "getting seg constraint information per node..." << std::endl;
+		constraints->push_back(
+			new SegConstraintProvider<RegionGraphType, SegID>(node_constraint, num_nodes));
+	}
+	constraints->push_back(
+		new SizeHeuristicConstraintProvider<RegionGraphType, SegID>(
+			sizes, size_heuristic_aff_threshold,
+			size_heuristic_small_threshold, size_heuristic_large_threshold));
+
+	WaterzContext* context = WaterzContext::createNew();
+	context->regionGraph        = regionGraph;
+	context->regionMerging      = regionMerging;
+	context->scoringFunction    = scoringFunction;
+	context->statisticsProvider = statisticsProvider;
+	context->constraints        = constraints;
+
+	WaterzState initial_state;
+	initial_state.context = context->id;
+	return initial_state;
+}
+
+std::vector<SegID>
+getRoots(WaterzState& state, size_t num_nodes) {
+	WaterzContext* context = WaterzContext::get(state.context);
+	return context->regionMerging->extractRoots(num_nodes);
+}
+
 std::vector<Merge>
 mergeUntil(
 		WaterzState& state,

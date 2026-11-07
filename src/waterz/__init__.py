@@ -7,7 +7,12 @@ try:
 except PackageNotFoundError:  # pragma: no cover
     __version__ = "uninstalled"
 
-from ._agglomerate import agglomerate, build_region_graph_only, build_region_graph_rich
+from ._agglomerate import (
+    agglomerate,
+    agglomerate_shell,
+    build_region_graph_only,
+    build_region_graph_rich,
+)
 from ._merge import (
     dust_merge_from_region_graph,
     get_region_graph,
@@ -22,6 +27,7 @@ from .evaluate import evaluate
 
 __all__ = [
     "agglomerate",
+    "agglomerate_shell",
     "build_region_graph_only",
     "build_region_graph_rich",
     "dust_merge_from_region_graph",

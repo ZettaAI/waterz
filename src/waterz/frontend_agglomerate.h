@@ -195,6 +195,40 @@ WaterzState initialize_with_rag(
 		std::size_t     height,
 		std::size_t     depth);
 
+// Agglomeration from the SHELL: compact uint32 fragments, affinities as 8- or 16-bit codes
+// read through a lookup table, and the constraints as summaries -- no float affinity
+// volume, no segmentation volume. Exactly the state initialize() builds from the same
+// fragments and the affinities the table produces, with a face touching fragment 0 read as
+// 0. Exactly one of aff_codes8 / aff_codes16 is given. The constraint is either a coarse
+// grid (lowres_constraint, with integer factors and offsets per axis) or one id per node
+// (node_constraint); both NULL means none.
+WaterzState initialize_shell(
+		size_t          width,
+		size_t          height,
+		size_t          depth,
+		const uint32_t* fragments,
+		size_t          num_nodes,
+		const uint8_t*  aff_codes8,
+		const uint16_t* aff_codes16,
+		const float*    lut,
+		const SemValue* semantic_data,
+		const SegID*    lowres_constraint,
+		size_t lw, size_t lh, size_t ld,
+		size_t fw, size_t fh, size_t fd,
+		size_t ow, size_t oh, size_t od,
+		const SegID*    node_constraint,
+		AffValue        semantic_aff_threshold,
+		size_t          semantic_size_threshold,
+		AffValue        semantic_signal_ratio,
+		const std::vector<SemValue>& semantic_taint_labels,
+		AffValue        semantic_taint_threshold,
+		AffValue        size_heuristic_aff_threshold,
+		size_t          size_heuristic_small_threshold,
+		size_t          size_heuristic_large_threshold);
+
+// The root of every node after the merges so far.
+std::vector<SegID> getRoots(WaterzState& state, size_t num_nodes);
+
 std::vector<Merge> mergeUntil(
 		WaterzState& state,
 		float        threshold);
