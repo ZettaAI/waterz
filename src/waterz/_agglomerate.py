@@ -275,6 +275,9 @@ def agglomerate_shell(
     size_heuristic_small_threshold: int = 1_000_000,
     size_heuristic_large_threshold: int = 10_000_000,
     discretize_queue: int = 256,
+    merge_history_steps: Sequence[int] | None = None,
+    region_graph_steps: Sequence[int] | None = None,
+    as_arrays: bool = False,
 ) -> Iterator[tuple]:
     """Agglomerate from the shell: compact uint32 ``fragments`` (``Z Y X``), affinity codes
     (uint8 or uint16, ``(3, Z, Y, X)``, channels z, y, x) read through ``lut``, and the
@@ -284,6 +287,12 @@ def agglomerate_shell(
     Gives the merges, region graph and roots that :func:`agglomerate` gives on
     ``lut[aff_codes]`` with every face touching fragment 0 set to 0, without either volume
     being built. Yields ``(roots, ...)`` per threshold; ``roots[n]`` is fragment ``n``'s node.
+
+    ``merge_history_steps`` / ``region_graph_steps``: return those only at these indices of the
+    sorted thresholds (None in the slot elsewhere; None = every step). Taking the region graph
+    re-scores stale edges into the merge queue, so leaving it out before the last step can
+    change later merges; out at the last step changes nothing. ``as_arrays``: structured numpy
+    arrays (merges a, b, c, score; edges u, v, score) and a float64 metadata array.
     """
     import importlib
 
@@ -303,6 +312,9 @@ def agglomerate_shell(
         size_heuristic_aff_threshold, size_heuristic_small_threshold,
         size_heuristic_large_threshold,
         return_merge_history, return_region_graph, return_region_graph_metadata,
+        None if merge_history_steps is None else frozenset(int(v) for v in merge_history_steps),
+        None if region_graph_steps is None else frozenset(int(v) for v in region_graph_steps),
+        bool(as_arrays),
     )
 
 
@@ -554,3 +566,20 @@ def build_region_graph_rich(
     )
 
     return module.buildRegionGraphRich(affs, fragments)
+
+
+def set_num_threads(n: int) -> None:
+    """Run the watershed's and the shell agglomeration's parallel parts on ``n`` threads in this
+    process (0: OpenMP's default, all cores or ``OMP_NUM_THREADS``). Results are the same at any count."""
+    import importlib
+
+    for name in _PRECOMPILED_MODULES.values():
+        importlib.import_module(f"waterz.{name}").set_num_threads(int(n))
+
+
+def get_num_threads() -> int:
+    """The thread count the shell agglomeration's parallel parts run with."""
+    import importlib
+
+    name = _PRECOMPILED_MODULES[(_DEFAULT_SCORING, 256, np.dtype("float32"), np.dtype("uint64"))]
+    return int(importlib.import_module(f"waterz.{name}").get_num_threads())

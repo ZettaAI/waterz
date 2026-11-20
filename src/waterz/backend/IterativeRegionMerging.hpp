@@ -29,10 +29,7 @@ public:
 	 */
 	IterativeRegionMerging(RegionGraphType& initialRegionGraph) :
 		_regionGraph(initialRegionGraph),
-		_edgeScores(initialRegionGraph),
-		_deleted(initialRegionGraph),
-		_stale(initialRegionGraph),
-		_edgeScoredAt(initialRegionGraph),
+		_edgeState(initialRegionGraph),
 		_nodeStamp(initialRegionGraph.numNodes(), 0),
 		_globalGen(0),
 		_rootPaths(initialRegionGraph.numNodes()),
@@ -71,7 +68,7 @@ public:
 		std::cout << "merging until " << threshold << std::endl;
 
 		if (!_edgeQueue.empty())
-			std::cout << "min edge score " << _edgeScores[_edgeQueue.top()] << std::endl;
+			std::cout << "min edge score " << _edgeState[_edgeQueue.top()].score << std::endl;
 
 		// while there are still unhandled edges
 		std::size_t merged = 0;
@@ -79,7 +76,7 @@ public:
 
 			// get the next cheapest edge to merge
 			EdgeIdType next = _edgeQueue.top();
-			ScoreType score = _edgeScores[next];
+			ScoreType score = _edgeState[next].score;
 
 			// stop, if the threshold got exceeded
 			// (also if edge is stale or got deleted, as new edges can only be 
@@ -94,7 +91,7 @@ public:
 
 			visitor.onPop(next, score);
 
-			if (_deleted[next]) {
+			if (_edgeState[next].deleted) {
 
 				visitor.onDeletedEdgeFound(next);
 				continue;
@@ -102,13 +99,13 @@ public:
 
 			NodeIdType su = _regionGraph.edge(next).u;
 			NodeIdType sv = _regionGraph.edge(next).v;
-			if (_stale[next] ||
-			    _edgeScoredAt[next] < std::max(_nodeStamp[su], _nodeStamp[sv])) {
+			if (_edgeState[next].stale ||
+			    _edgeState[next].scoredAt < std::max(_nodeStamp[su], _nodeStamp[sv])) {
 
 				// if we encountered a stale edge, recompute it's score and
 				// place it back in the queue
 				ScoreType newScore = scoreEdge(next, edgeScoringFunction);
-				_stale[next] = false;
+				_edgeState[next].stale = false;
 				// A stale edge's score is recomputed from running/area-weighted
 				// mean affinities in floating point, so it can dip ~1 ULP below
 				// the score it was queued at. Tolerate that rounding noise; a
@@ -194,16 +191,16 @@ public:
 
 		for (EdgeIdType e = 0; e < _regionGraph.numEdges(); e++) {
 
-			if (_deleted[e])
+			if (_edgeState[e].deleted)
 				continue;
 
 			ScoreType score;
 			NodeIdType eu = _regionGraph.edge(e).u;
 			NodeIdType ev = _regionGraph.edge(e).v;
-			if (_stale[e] || _edgeScoredAt[e] < std::max(_nodeStamp[eu], _nodeStamp[ev]))
+			if (_edgeState[e].stale || _edgeState[e].scoredAt < std::max(_nodeStamp[eu], _nodeStamp[ev]))
 				score = scoreEdge(e, edgeScoringFunction);
 			else
-				score = _edgeScores[e];
+				score = _edgeState[e].score;
 
 			if (score < _mergedUntil)
 				continue;
@@ -225,16 +222,16 @@ public:
 
 		for (EdgeIdType e = 0; e < _regionGraph.numEdges(); e++) {
 
-			if (_deleted[e])
+			if (_edgeState[e].deleted)
 				continue;
 
 			ScoreType score;
 			NodeIdType eu = _regionGraph.edge(e).u;
 			NodeIdType ev = _regionGraph.edge(e).v;
-			if (_stale[e] || _edgeScoredAt[e] < std::max(_nodeStamp[eu], _nodeStamp[ev]))
+			if (_edgeState[e].stale || _edgeState[e].scoredAt < std::max(_nodeStamp[eu], _nodeStamp[ev]))
 				score = scoreEdge(e, edgeScoringFunction);
 			else
-				score = _edgeScores[e];
+				score = _edgeState[e].score;
 
 			if (score < _mergedUntil)
 				continue;
@@ -292,7 +289,7 @@ private:
 			// Under lazy incidence removal, b's taken list can hold edges deleted in
 			// earlier merges. Skip them here -- a deleted edge may no longer have b
 			// as an endpoint, so getOpposite below would be meaningless.
-			if (_deleted[neighborEdge])
+			if (_edgeState[neighborEdge].deleted)
 				continue;
 
 			NodeIdType neighbor = _regionGraph.getOpposite(b, neighborEdge);
@@ -322,7 +319,7 @@ private:
 				// to consider it's real score (which is assumed to be
 				// larger than the minium of the two original scores).
 
-				if (_edgeScores[neighborEdge] > _edgeScores[aNeighborEdge]) {
+				if (_edgeState[neighborEdge].score > _edgeState[aNeighborEdge].score) {
 
 					// We got lucky, we can reuse the edge that is attached to a
 					// already
@@ -330,9 +327,9 @@ private:
 					bool edgeStatisticChanged = statisticsProvider.notifyEdgeMerge(neighborEdge, aNeighborEdge);
 
 					_regionGraph.removeEdgeSkipNode(neighborEdge, b);
-					_deleted[neighborEdge] = true;
+					_edgeState[neighborEdge].deleted = true;
 					if (edgeStatisticChanged)
-						_stale[aNeighborEdge] = true;
+						_edgeState[aNeighborEdge].stale = true;
 
 				} else {
 
@@ -344,8 +341,8 @@ private:
 					_regionGraph.replaceEdge(aNeighborEdge, neighborEdge, a, neighbor, b);
 
 					if (edgeStatisticChanged)
-						_stale[neighborEdge] = true;
-					_deleted[aNeighborEdge] = true;
+						_edgeState[neighborEdge].stale = true;
+					_edgeState[aNeighborEdge].deleted = true;
 				}
 			}
 		}
@@ -362,8 +359,8 @@ private:
 
 		ScoreType score = edgeScoringFunction(e);
 
-		_edgeScores[e] = score;
-		_edgeScoredAt[e] = _globalGen;
+		_edgeState[e].score = score;
+		_edgeState[e].scoredAt = _globalGen;
 		_edgeQueue.push(e, score);
 
 		return score;
@@ -405,16 +402,21 @@ private:
 	RegionGraphType& _regionGraph;
 
 	// the score of each edge
-	typename RegionGraphType::template EdgeMap<ScoreType> _edgeScores;
+	// Everything the merge keeps per edge, side by side: the score it was queued at, the clock when it was
+	// scored, and whether it is stale or deleted -- read together for every popped edge.
+	struct EdgeState {
+		uint64_t scoredAt = 0;
+		ScoreType score = ScoreType();
+		bool stale = false;
+		bool deleted = false;
+	};
+	typename RegionGraphType::template EdgeMap<EdgeState> _edgeState;
 
-	typename RegionGraphType::template EdgeMap<bool> _stale;
-	typename RegionGraphType::template EdgeMap<bool> _deleted;
 
 	// Generation clock for O(1) staleness. An edge is stale iff it was last scored
 	// before the latest stamp on either of its (current) endpoints. A stats-changing
 	// merge bumps _globalGen and stamps the survivor, so every incident edge reads
 	// as stale at pop-time without the O(degree) per-merge sweep it replaces.
-	typename RegionGraphType::template EdgeMap<uint64_t> _edgeScoredAt;
 	std::vector<uint64_t> _nodeStamp;
 	uint64_t _globalGen;
 

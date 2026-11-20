@@ -233,6 +233,10 @@ WaterzState initialize_shell(
 
 // abiss's watershed + size merge on affinity codes read through a table, into uint32 labels
 // (Z, Y, X); exactly one of codes8 / codes16 is given. See backend/abiss_watershed.hpp.
+void setNumThreads(int n);
+
+int getNumThreads();
+
 void watershedCodes(
 		size_t width, size_t height, size_t depth,
 		const uint8_t* codes8, const uint16_t* codes16, const float* lut,

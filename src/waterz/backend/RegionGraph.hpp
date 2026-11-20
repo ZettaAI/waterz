@@ -119,6 +119,9 @@ private:
 
 	virtual void onNewEdge(std::size_t id) = 0;
 
+	// Room for n edges, ahead of adding them; contents unchanged.
+	virtual void onReserveEdges(std::size_t n) {}
+
 	RegionGraphType& _regionGraph;
 };
 
@@ -143,6 +146,11 @@ private:
 	void onNewEdge(std::size_t id) {
 
 		_values.push_back(T());
+	}
+
+	void onReserveEdges(std::size_t n) {
+
+		_values.reserve(n);
 	}
 
 	Container _values;
@@ -191,6 +199,16 @@ public:
 			map->onNewNode(id);
 
 		return id;
+	}
+
+	// Room for n edges in the edge list, the pair map and every edge map, ahead of adding them: the
+	// graph and every lookup in it are the same; only the reallocations as it grows are saved.
+	void reserveEdges(std::size_t n) {
+
+		_edges.reserve(n);
+		_edgeMap.reserve(n);
+		for (RegionGraphEdgeMapBase<ID>* map : _edgeMaps)
+			map->onReserveEdges(n);
 	}
 
 	EdgeIdType addEdge(NodeIdType u, NodeIdType v) {

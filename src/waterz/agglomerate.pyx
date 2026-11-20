@@ -160,6 +160,9 @@ def agglomerate_shell(
         return_merge_history,
         return_region_graph,
         return_region_graph_metadata,
+        merge_history_steps=None,
+        region_graph_steps=None,
+        as_arrays=False,
     ):
     """Agglomerate from compact uint32 fragments and affinity CODES read through ``lut``.
 
@@ -167,6 +170,14 @@ def agglomerate_shell(
     as requested: ``roots[n]`` is the node fragment ``n`` belongs to. Node ids are the
     fragment values. Every array must be C-contiguous; ``aff_codes`` is uint8 or uint16
     ``(3, Z, Y, X)`` with channels z, y, x, and ``lut`` has an entry for every code.
+
+    ``merge_history_steps`` / ``region_graph_steps`` (indices into the sorted thresholds, None =
+    every step) take the merge history / the region graph and its metadata only at those steps;
+    the other steps yield None in the same tuple slot. Taking the region graph re-scores stale
+    edges into the merge queue, so leaving it out before the last step can change later merges;
+    leaving it out at the last step changes nothing. ``as_arrays`` yields structured arrays
+    (merges: a, b, c uint64, score float32; edges: u, v uint64, score float32) and a float64
+    metadata array instead of lists of dicts and floats.
     """
     for arr in (fragments, aff_codes, lut, semantic, lowres_constraint, node_constraint):
         if arr is not None and not arr.flags['C_CONTIGUOUS']:
@@ -188,17 +199,62 @@ def agglomerate_shell(
         semantic_taint_labels, semantic_taint_threshold,
         size_heuristic_aff_threshold, size_heuristic_small_threshold,
         size_heuristic_large_threshold)
-    for threshold in sorted(thresholds):
-        merge_history = mergeUntil(state, threshold)
+    cdef vector[Merge] merges
+    cdef vector[ScoredEdge] edges
+    cdef vector[double] meta
+    for step, threshold in enumerate(sorted(thresholds)):
+        merges = mergeUntil(state, threshold)
         result = (np.asarray(getRoots(state, num_nodes), dtype=np.uint64),)
         if return_merge_history:
-            result += (merge_history,)
+            if merge_history_steps is not None and step not in merge_history_steps:
+                result += (None,)
+            elif as_arrays:
+                result += (_merges_as_array(merges),)
+            else:
+                result += (merges,)
+        take_graph = region_graph_steps is None or step in region_graph_steps
         if return_region_graph:
-            result += (getRegionGraph(state),)
+            if not take_graph:
+                result += (None,)
+            else:
+                edges = getRegionGraph(state)
+                result += (_edges_as_array(edges) if as_arrays else edges,)
         if return_region_graph_metadata:
-            result += (getRegionGraphMeta(state),)
+            if not take_graph:
+                result += (None,)
+            else:
+                meta = getRegionGraphMeta(state)
+                result += (np.asarray(meta, dtype=np.float64) if as_arrays else meta,)
         yield result
     free(state)
+
+
+cdef _merges_as_array(vector[Merge]& merges):
+    out = np.empty(merges.size(), dtype=[("a", np.uint64), ("b", np.uint64), ("c", np.uint64), ("score", np.float32)])
+    cdef uint64_t[:] a = out["a"]
+    cdef uint64_t[:] b = out["b"]
+    cdef uint64_t[:] c = out["c"]
+    cdef float[:] s = out["score"]
+    cdef size_t i
+    for i in range(merges.size()):
+        a[i] = merges[i].a
+        b[i] = merges[i].b
+        c[i] = merges[i].c
+        s[i] = merges[i].score
+    return out
+
+
+cdef _edges_as_array(vector[ScoredEdge]& edges):
+    out = np.empty(edges.size(), dtype=[("u", np.uint64), ("v", np.uint64), ("score", np.float32)])
+    cdef uint64_t[:] u = out["u"]
+    cdef uint64_t[:] v = out["v"]
+    cdef float[:] s = out["score"]
+    cdef size_t i
+    for i in range(edges.size()):
+        u[i] = edges[i].u
+        v[i] = edges[i].v
+        s[i] = edges[i].score
+    return out
 
 
 def watershed_codes(aff_codes, lut, float low, float high, size_t size_threshold):
@@ -376,6 +432,8 @@ def __initialize_with_rag(
         shape[0], shape[1], shape[2])
 
 cdef extern from "frontend_agglomerate.h":
+    void setNumThreads(int n)
+    int getNumThreads()
 
     struct Metrics:
         double voi_split
@@ -543,3 +601,13 @@ def buildRegionGraphRich(
             'contact_area': edges[i].contact_area,
         })
     return result
+
+
+def set_num_threads(int n):
+    """The thread count of this module's parallel regions, for the process; 0 = OpenMP's default."""
+    setNumThreads(n)
+
+
+def get_num_threads():
+    """The thread count this module's parallel regions run with."""
+    return getNumThreads()
