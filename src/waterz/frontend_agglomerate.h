@@ -130,7 +130,12 @@ private:
 
 	WaterzContext() {}
 
-	~WaterzContext() {}
+	// The constraint providers are owned here as raw pointers: delete them with the context.
+	~WaterzContext() {
+		if (constraints)
+			for (ConstraintProvider* provider : *constraints)
+				delete provider;
+	}
 
 	static std::map<int, WaterzContext*> _contexts;
 	static int _nextId;

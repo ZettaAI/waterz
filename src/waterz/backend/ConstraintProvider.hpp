@@ -8,6 +8,7 @@
  */
 class ConstraintProvider {
 public:
+	virtual ~ConstraintProvider() {}
 	virtual inline bool notifyNodeMerge(uint64_t from, uint64_t to) = 0;
 	virtual inline bool isConstrained(uint64_t from, uint64_t to, float score) const = 0;
 };
