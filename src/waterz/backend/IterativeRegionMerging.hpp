@@ -255,6 +255,9 @@ private:
 
 		NodeIdType a = _regionGraph.edge(e).u;
 		NodeIdType b = _regionGraph.edge(e).v;
+		// The node with the longer incidence list survives, so each edge is moved O(log n) times.
+		if (_regionGraph.incEdges(a).size() < _regionGraph.incEdges(b).size())
+			std::swap(a, b);
 
 		// assign new node a = a + b
 		bool nodeStatisticsChanged = statisticsProvider.notifyNodeMerge(b, a);
