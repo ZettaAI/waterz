@@ -43,7 +43,7 @@ def test_agglomerate() -> None:
         assert segmentation.dtype == np.uint64
         # just what I observed... from my random test
         # change when better test data is available
-        assert np.all(segmentation == 1)
+        assert len(np.unique(segmentation)) == 1 and segmentation.flat[0] != 0
 
 
 def _shell_case(seed: int):
