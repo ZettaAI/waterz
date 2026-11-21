@@ -685,8 +685,22 @@ region_graph_lean_slabs(const PaddedAffs<Code>& aff, const LabelVolume& seg_raw,
 		sl.link.reserve(guess);
 		sl.er.reserve(guess);
 		const uint8_t me = (uint8_t)t;
-		auto face = [&](Label a, Label b, uint16_t r) {
+		// The last pair each face direction met and its edge: neighbouring voxels along a row mostly face the
+		// same pair, which then needs no lookup. A hit skips only the list's move to front, which changes
+		// nothing but the order lookups walk a list in.
+		struct Last {
+			Label lo = 0, hi = 0;
+			uint32_t e = NONE;
+		};
+		Last last_x, last_y, last_z;
+		auto face = [&](Label a, Label b, uint16_t r, Last& c) {
 			const Label lo = std::min(a, b), hi = std::max(a, b);
+			if (c.lo == lo && c.hi == hi) {
+				if (r > sl.er[c.e]) sl.er[c.e] = r;
+				return;
+			}
+			c.lo = lo;
+			c.hi = hi;
 			if (hi >= own0) {
 				uint32_t* const h = &head[hi - own0];
 				uint32_t prev = NONE;
@@ -698,6 +712,7 @@ region_graph_lean_slabs(const PaddedAffs<Code>& aff, const LabelVolume& seg_raw,
 							sl.link[e].hi = *h;
 							*h = e;
 						}
+						c.e = e;
 						return;
 					}
 				}
@@ -705,6 +720,7 @@ region_graph_lean_slabs(const PaddedAffs<Code>& aff, const LabelVolume& seg_raw,
 				sl.er.push_back(r);
 				sl.link.push_back(EdgePair{lo, *h});
 				*h = e;
+				c.e = e;
 			} else {
 				const uint64_t key = ((uint64_t)lo << 32) | hi;
 				auto it = fmap.try_emplace(key, (uint32_t)sl.link.size());
@@ -715,6 +731,7 @@ region_graph_lean_slabs(const PaddedAffs<Code>& aff, const LabelVolume& seg_raw,
 				} else if (r > sl.er[it.first->second]) {
 					sl.er[it.first->second] = r;
 				}
+				c.e = it.first->second;
 			}
 		};
 		for (index z = z0[t]; z < z0[t + 1]; ++z)
@@ -750,15 +767,15 @@ region_graph_lean_slabs(const PaddedAffs<Code>& aff, const LabelVolume& seg_raw,
 					}
 					if (x > 1) {
 						const Label u = row[x - 1];
-						if (u && s != u) face(s, u, rank_of[cx[base + x]]);
+						if (u && s != u) face(s, u, rank_of[cx[base + x]], last_x);
 					}
 					if (y > 1) {
 						const Label u = row_y[x];
-						if (u && s != u) face(s, u, rank_of[cy[base + x]]);
+						if (u && s != u) face(s, u, rank_of[cy[base + x]], last_y);
 					}
 					if (z > 1) {
 						const Label u = row_z[x];
-						if (u && s != u) face(s, u, rank_of[cz[base + x]]);
+						if (u && s != u) face(s, u, rank_of[cz[base + x]], last_z);
 					}
 				}
 			}
@@ -1052,17 +1069,26 @@ inline void merge_segments_packed(LabelVolume& seg_raw, MappedBuffer<EdgePair>& 
 	const uint32_t size_threshold = (uint32_t)size_threshold_full;
 	MappedBuffer<PackedNode> uf;
 	uf.resize_huge(n);
-	for (std::size_t i = 0; i < n; ++i) {
-		uf[i].parent = (Label)i;
-		uf[i].count = counts[i];
-	}
-	std::vector<uint32_t>().swap(counts);
 	MappedBuffer<uint8_t> rank;
 	rank.resize_huge(n);
-	std::fill(rank.data(), rank.data() + n, uint8_t(0));
+	{
+		PackedNode* const u = uf.data();
+		uint8_t* const rk = rank.data();
+		const uint32_t* const c = counts.data();
+#pragma omp parallel for num_threads(wz_threads()) schedule(static)
+		for (std::ptrdiff_t i = 0; i < (std::ptrdiff_t)n; ++i) {
+			u[i].parent = (Label)i;
+			u[i].count = c[i];
+			rk[i] = 0;
+		}
+	}
+	std::vector<uint32_t>().swap(counts);
 	const std::size_t ne = edges.size();
 	const EdgePair* const ep = edges.data();
 	const std::size_t BLOCK = std::size_t(1) << 16;
+	// Records read this many edges ahead are asked into cache first: the edges are in affinity order, so
+	// their labels' records are scattered over the whole table.
+	const std::size_t PREFETCH = 16;
 	const int nt = wz_threads();
 	std::vector<Label> ra(BLOCK), rb(BLOCK);
 	std::vector<uint8_t> live(BLOCK);
@@ -1087,6 +1113,10 @@ inline void merge_segments_packed(LabelVolume& seg_raw, MappedBuffer<EdgePair>& 
 		// one set, a root 0 stays 0, and two sets at or above the threshold are refused untouched.
 #pragma omp parallel for num_threads(nt) schedule(static)
 		for (std::ptrdiff_t i = 0; i < (std::ptrdiff_t)m; ++i) {
+			if (e0 + i + PREFETCH < ne) {
+				__builtin_prefetch(&ufp[ep[e0 + i + PREFETCH].lo]);
+				__builtin_prefetch(&ufp[ep[e0 + i + PREFETCH].hi]);
+			}
 			const Label a = root_of(ep[e0 + i].lo);
 			const Label b = root_of(ep[e0 + i].hi);
 			ra[i] = a;
@@ -1098,6 +1128,10 @@ inline void merge_segments_packed(LabelVolume& seg_raw, MappedBuffer<EdgePair>& 
 		// In order: a provisional root linked by an earlier edge of this block is followed to the
 		// root it now has, which is the root the serial loop's find gives.
 		for (std::size_t i = 0; i < m; ++i) {
+			if (i + PREFETCH < m && live[i + PREFETCH]) {
+				__builtin_prefetch(&ufp[ra[i + PREFETCH]]);
+				__builtin_prefetch(&ufp[rb[i + PREFETCH]]);
+			}
 			if (!live[i])
 				continue;
 			Label s1 = ra[i];
